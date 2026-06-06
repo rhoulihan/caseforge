@@ -1,9 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { ingest, ingestAsync, MAX_PARSE_BYTES } from './ingest';
-import type { TablePrimitive, ImagePrimitive } from './types';
+import type { TablePrimitive, ImagePrimitive, TextPrimitive } from './types';
 
 const txt = (s: string) => new TextEncoder().encode(s);
 const u8 = (...b: number[]) => new Uint8Array(b);
+
+/** OLE2 magic + a UTF-16LE stream-name marker (for legacy-format detection). */
+function oleWith(marker: string): Uint8Array {
+  const magic = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0, 0, 0, 0];
+  const m: number[] = [];
+  for (const ch of marker) {
+    const c = ch.charCodeAt(0);
+    m.push(c & 0xff, (c >> 8) & 0xff);
+  }
+  return new Uint8Array([...magic, ...m]);
+}
 
 describe('ingest', () => {
   it('routes a CSV to a table primitive and reports the file', () => {
@@ -91,5 +102,42 @@ describe('ingest — error categorization', () => {
     });
     expect(invoked).toBe(false);
     expect(b.files[0]).toMatchObject({ ok: false, errorCategory: 'file_too_large' });
+  });
+});
+
+describe('ingest — new text + image formats (built-in, synchronous)', () => {
+  it('extracts readable text from HTML, XML, and RTF', () => {
+    const html = ingest([{ name: 'a.html', bytes: txt('<html><body><p>Hello <b>world</b></p></body></html>') }]);
+    expect((html.primitives[0] as TextPrimitive).text).toContain('Hello world');
+    expect(html.files[0]).toMatchObject({ type: 'html', ok: true });
+
+    const xml = ingest([{ name: 'a.xml', bytes: txt('<?xml version="1.0"?><r><a>node value</a></r>') }]);
+    expect((xml.primitives[0] as TextPrimitive).text).toContain('node value');
+
+    const rtf = ingest([{ name: 'a.rtf', bytes: txt('{\\rtf1\\ansi Hello\\par World}') }]);
+    expect((rtf.primitives[0] as TextPrimitive).text).toContain('Hello');
+  });
+
+  it('routes WEBP to an image primitive', () => {
+    const b = u8(0x52, 0x49, 0x46, 0x46, 0x10, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 1, 2, 3);
+    const img = ingest([{ name: 'chart.webp', bytes: b }]).primitives.find((p) => p.kind === 'image') as ImagePrimitive;
+    expect(img.mime).toBe('image/webp');
+  });
+
+  it('skips an oversized builtin-handled file before parsing it (no OOM path)', () => {
+    const big = new Uint8Array(MAX_PARSE_BYTES + 1).fill(0x41); // 'A' → decodes as text (a builtin type)
+    const r = ingest([{ name: 'huge.txt', bytes: big }]);
+    expect(r.files[0]).toMatchObject({ ok: false, errorCategory: 'file_too_large' });
+    expect(r.primitives).toHaveLength(0);
+  });
+
+  it('flags legacy .xls / .doc with a helpful re-save message', () => {
+    const xls = ingest([{ name: 'old', bytes: oleWith('Workbook') }]);
+    expect(xls.files[0]).toMatchObject({ type: 'xls', ok: false, errorCategory: 'unsupported_format' });
+    expect(xls.files[0]!.note).toMatch(/\.xlsx|CSV/i);
+
+    const doc = ingest([{ name: 'old', bytes: oleWith('WordDocument') }]);
+    expect(doc.files[0]).toMatchObject({ type: 'doc', ok: false });
+    expect(doc.files[0]!.note).toMatch(/\.docx|PDF/i);
   });
 });

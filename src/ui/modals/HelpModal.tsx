@@ -8,7 +8,7 @@ import { SUPPORT_EMAIL } from '../../errors/email';
 const FAQ: { q: string; a: string }[] = [
   {
     q: 'Which file formats can I drop in?',
-    a: 'Spreadsheets (.xlsx), PDFs (.pdf), Outlook messages (.msg), and text data (.csv, .tsv, .json, .txt), plus chart images (.png, .jpg, .gif). Word/PowerPoint/legacy Office (.docx, .pptx, .xls, .doc) are not read yet — paste the key details into a .csv or .txt instead.',
+    a: 'Spreadsheets (.xlsx), Word (.docx), PowerPoint (.pptx), PDFs (.pdf), email (.msg, .eml), web/markup (.html, .xml, .rtf), and text data (.csv, .tsv, .json, .txt, .md), plus chart images (.png, .jpg, .gif, .webp). Legacy .xls and .doc aren’t read — please re-save them as .xlsx / .docx, or export to PDF.',
   },
   { q: 'Which API key — Claude or OpenAI?', a: 'Either works. Use whichever account has credit. The key is held in this browser session only and is never written to disk.' },
   { q: 'Can I try it without a real customer?', a: 'Yes — your download includes a samples/northwind-demo folder of fictional artifacts. Drop those files into Step 2 to see the whole flow.' },
