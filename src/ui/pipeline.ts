@@ -11,10 +11,12 @@ import type { EcpuStorageRates } from '../render/builders';
 import type { TcoProfile } from '../research/tco';
 import type { WizardState } from './state';
 import { MONGODB_PROFILE } from '../profile/mongodb';
+import { ENGINE_CONFIG } from '../engine/config';
 import { createLLM } from '../provider';
 
 const MODEL = 'claude-opus-4-8';
-const ADB_RATES = { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156 }; // Oracle ADB list rates
+// Oracle ADB list rates — sourced from the central engine config (edit there when Oracle revises pricing).
+const ADB_RATES = { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo };
 
 // Generic v1 fallback used only when the rep skips web-search cost research (labelled "default,
 // not researched" in the UI). Research produces workload-appropriate figures.
