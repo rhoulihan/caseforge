@@ -21,7 +21,7 @@ export interface RedactionResult {
 
 export interface RedactionDeps {
   ocr: (bytes: Uint8Array, mime: string) => Promise<{ words: OcrWord[]; meanConfidence: number }>;
-  paint: (bytes: Uint8Array, mime: string, rects: RedactRect[]) => Promise<Uint8Array>;
+  paint: (bytes: Uint8Array, mime: string, rects: RedactRect[]) => Promise<{ bytes: Uint8Array; mime: string }>;
 }
 
 export async function redactImage(
@@ -51,12 +51,20 @@ export async function redactImage(
   const ocrText = words.map((w) => w.text).join(' ');
   const phrases = phrasesToRedact(map, ocrText, companyName);
   const rects = computeRedactions(words, phrases);
-  const bytes = rects.length > 0 ? await deps.paint(img.bytes, img.mime, rects) : img.bytes;
+  let bytes = img.bytes;
+  let mime = img.mime;
+  if (rects.length > 0) {
+    const painted = await deps.paint(img.bytes, img.mime, rects);
+    bytes = painted.bytes;
+    mime = painted.mime; // non-JPEG is re-encoded as PNG — carry the real type to the vision API
+  }
 
+  // Warn only when OCR actually read text but wasn't confident (a name may have slipped). A purely
+  // graphical image with NO recognizable text isn't a low-confidence miss — don't cry wolf.
   const warning =
-    conf < LOW_CONFIDENCE
+    words.length > 0 && conf < LOW_CONFIDENCE
       ? `Low text-recognition confidence (${Math.round(conf)}%) — a name in this image may not have been caught. Review it before continuing.`
       : undefined;
 
-  return { bytes, mime: img.mime, rectCount: rects.length, meanConfidence: conf, redacted: rects.length > 0, warning };
+  return { bytes, mime, rectCount: rects.length, meanConfidence: conf, redacted: rects.length > 0, warning };
 }

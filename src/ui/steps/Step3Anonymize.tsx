@@ -56,6 +56,15 @@ export function Step3Anonymize() {
     };
   }, [launcher]);
 
+  // Back-nav recovery: if we remounted with the reviewed flag set but no local previews to show,
+  // the review panel would be empty + unusable — force a re-scan so the rep can verify redactions.
+  useEffect(() => {
+    if (state.imagesReviewed && imgReview.length === 0) patch({ imagesReviewed: false });
+  }, [state.imagesReviewed, imgReview.length, patch]);
+
+  // Free preview object URLs when they're replaced (re-scan) or the step unmounts.
+  useEffect(() => () => imgReview.forEach((r) => URL.revokeObjectURL(r.url)), [imgReview]);
+
   const remove = (phrase: string): void =>
     patch({ detected: state.detected.filter((d) => d.phrase !== phrase), map: state.map.filter((m) => m.phrase !== phrase), anonBundle: null });
 
@@ -106,8 +115,8 @@ export function Step3Anonymize() {
         state.anonBundle.primitives.map(async (p) => {
           if (p.kind !== 'image') return p;
           const r = await redactImageInBrowser({ bytes: p.bytes, mime: p.mime }, state.map, state.config!.companyName);
-          review.push({ source: p.source, url: URL.createObjectURL(new Blob([new Uint8Array(r.bytes)], { type: p.mime })), rectCount: r.rectCount, warning: r.warning });
-          return { ...p, bytes: r.bytes };
+          review.push({ source: p.source, url: URL.createObjectURL(new Blob([new Uint8Array(r.bytes)], { type: r.mime })), rectCount: r.rectCount, warning: r.warning });
+          return { ...p, bytes: r.bytes, mime: r.mime }; // r.mime: non-JPEG is re-encoded to PNG by the redactor
         }),
       );
       setRedactedPrims(prims);
@@ -132,7 +141,11 @@ export function Step3Anonymize() {
     patch({ anonBundle: { files: state.anonBundle.files, primitives: redactedPrims.filter((p) => p.kind !== 'image' || !next.has(p.source)) }, imagesReviewed: true });
   }
 
-  const imageCount = state.anonBundle?.primitives.filter((p) => p.kind === 'image').length ?? 0;
+  // Count from the SCANNED set (redactedPrims) so excluding an image doesn't hide the whole panel
+  // (which would strand the rep with no way to re-include it).
+  const imageCount = redactedPrims
+    ? redactedPrims.filter((p) => p.kind === 'image').length
+    : (state.anonBundle?.primitives.filter((p) => p.kind === 'image').length ?? 0);
 
   return (
     <section class="cf-card">

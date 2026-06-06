@@ -4,19 +4,21 @@
 
 import type { RedactRect } from './match';
 
-export async function paintRedactions(bytes: Uint8Array, mime: string, rects: RedactRect[]): Promise<Uint8Array> {
+/** Returns the redacted bytes AND the MIME they were actually encoded as (so the caller declares the
+ * correct mediaType to the vision API — non-JPEG inputs are re-encoded as PNG). */
+export async function paintRedactions(bytes: Uint8Array, mime: string, rects: RedactRect[]): Promise<{ bytes: Uint8Array; mime: string }> {
   const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: mime }));
   try {
     const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
     const ctx = canvas.getContext('2d');
-    if (!ctx) return bytes; // no 2d context → leave the image as-is (the caller warns + the rep reviews)
+    if (!ctx) return { bytes, mime }; // no 2d context → leave as-is (caller warns + the rep reviews)
     ctx.drawImage(bitmap, 0, 0);
     ctx.fillStyle = '#000000';
     for (const r of rects) ctx.fillRect(r.x, r.y, r.w, r.h);
     // PNG for everything except JPEG (lossless boxes; both are vision-accepted).
-    const type = mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
-    const blob = await canvas.convertToBlob({ type });
-    return new Uint8Array(await blob.arrayBuffer());
+    const outMime = mime === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+    const blob = await canvas.convertToBlob({ type: outMime });
+    return { bytes: new Uint8Array(await blob.arrayBuffer()), mime: outMime };
   } finally {
     bitmap.close();
   }

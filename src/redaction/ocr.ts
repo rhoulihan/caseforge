@@ -13,7 +13,11 @@ function ocrWorker(): Promise<Worker> {
   if (!workerPromise) {
     workerPromise = createWorker('eng', 1 /* LSTM */, {
       workerPath: `${ASSET_BASE}/worker.min.js`,
-      corePath: ASSET_BASE,
+      // Point at the SPECIFIC single-file core (ends in ".js") so tesseract loads it directly and
+      // skips its SIMD/relaxedSIMD auto-detection — which would request relaxedsimd files that the
+      // pinned tesseract.js-core doesn't ship. simd-lstm matches oem=1 (LSTM) and needs WASM SIMD
+      // (universal in modern browsers). See scripts/setup-tesseract-assets.mjs.
+      corePath: `${ASSET_BASE}/tesseract-core-simd-lstm.wasm.js`,
       langPath: ASSET_BASE,
     });
   }

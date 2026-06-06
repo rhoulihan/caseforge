@@ -27,14 +27,12 @@ const cp = (from, to) => {
 if (!cp(join(root, 'node_modules/tesseract.js/dist/worker.min.js'), join(dest, 'worker.min.js')))
   console.warn('WARN: tesseract.js worker not found — run `pnpm install`.');
 
-// 2. WASM core — SIMD variants + the loader entry only (modern browsers all support WASM SIMD).
+// 2. WASM core — the SIMD+LSTM SINGLE-FILE bundle (.wasm.js, what tesseract's worker importScripts)
+//    plus its sibling .wasm binary as insurance. ocr.ts pins corePath to this exact .wasm.js file.
 const coreDir = join(root, 'node_modules/tesseract.js-core');
 if (existsSync(coreDir)) {
-  for (const f of readdirSync(coreDir)) {
-    // SIMD loader (.js) + binary (.wasm) only — skip the big *.wasm.js single-file fallbacks
-    // (the standard path loads the .js loader which fetches the .wasm). Keeps the footprint ~8 MB.
-    const want = (f.includes('simd') || f === 'index.js') && (f.endsWith('.wasm') || f.endsWith('.js')) && !f.endsWith('.wasm.js');
-    if (want) cp(join(coreDir, f), join(dest, f));
+  for (const f of ['tesseract-core-simd-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm']) {
+    if (!cp(join(coreDir, f), join(dest, f))) console.warn(`WARN: ${f} not found in tesseract.js-core.`);
   }
 } else {
   console.warn('WARN: tesseract.js-core not found — run `pnpm install`.');

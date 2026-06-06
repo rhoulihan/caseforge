@@ -8,9 +8,13 @@ const word = (text: string, x0: number, conf = 90, line = 0): OcrWord => ({ text
 const map: MapEntry[] = [{ phrase: 'Acme Corp', slug: 'CF_ORG_01' }];
 
 function deps(words: OcrWord[], conf: number, ocrThrows = false): RedactionDeps & { paint: ReturnType<typeof vi.fn> } {
-  const paint = vi.fn(async () => new Uint8Array([1, 2, 3])); // "redacted" sentinel
+  const paint = vi.fn(async (...a: [Uint8Array, string, unknown]) => ({ bytes: new Uint8Array([1, 2, 3]), mime: a[1] === 'image/jpeg' ? 'image/jpeg' : 'image/png' }));
   return {
-    ocr: ocrThrows ? vi.fn(async () => { throw new Error('worker boom'); }) : vi.fn(async () => ({ words, meanConfidence: conf })),
+    ocr: ocrThrows
+      ? vi.fn(async () => {
+          throw new Error('worker boom');
+        })
+      : vi.fn(async () => ({ words, meanConfidence: conf })),
     paint,
   };
 }
@@ -49,5 +53,19 @@ describe('redactImage', () => {
     expect(r.bytes.length).toBe(100); // original, un-redacted
     expect(r.warning).toMatch(/could not scan|un-redacted/i);
     expect(d.paint).not.toHaveBeenCalled();
+  });
+
+  it('does NOT cry low-confidence on a graphical image where OCR found zero words', async () => {
+    const d = deps([], 0); // OCR ran fine, just no text (conf 0 only because there are no words)
+    const r = await redactImage({ bytes: bytes(100), mime: 'image/png' }, map, 'Acme Corp', d);
+    expect(r.warning).toBeUndefined();
+    expect(r.redacted).toBe(false);
+  });
+
+  it('reports the re-encoded MIME for a non-JPEG image so vision gets the right mediaType', async () => {
+    const d = deps([word('Acme', 0)], 92);
+    const r = await redactImage({ bytes: bytes(100), mime: 'image/webp' }, map, 'Acme Corp', d);
+    expect(r.redacted).toBe(true);
+    expect(r.mime).toBe('image/png'); // webp re-encoded to png by paint
   });
 });
