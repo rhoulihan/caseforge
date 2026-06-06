@@ -29,6 +29,7 @@ export interface WizardState {
   detected: DetectedPhrase[];
   map: MapEntry[];
   anonBundle: EvidenceBundle | null; // bundle with text primitives replaced by slugs (what triage/LLM sees)
+  imagesReviewed: boolean; // images OCR-redacted + reviewed by the rep (or none present)
   // 4 · Confirm
   triage: TriageResult | null;
   gateAnswers: GateAnswer[];
@@ -58,6 +59,7 @@ export function initialWizardState(): WizardState {
     detected: [],
     map: [],
     anonBundle: null,
+    imagesReviewed: false,
     triage: null,
     gateAnswers: [],
     confirmed: false,
@@ -70,7 +72,9 @@ export function initialWizardState(): WizardState {
 export function stepValidity(s: WizardState): Record<WizardStepId, boolean> {
   const setupOk = !!s.config && s.hasApiKey && s.config.companyName.trim().length > 0;
   const filesOk = !!s.bundle && s.bundle.primitives.length > 0;
-  const anonOk = !!s.anonBundle;
+  // Images must be OCR-redacted + reviewed before they can reach vision (or there are none).
+  const anonHasImages = !!s.anonBundle?.primitives.some((p) => p.kind === 'image');
+  const anonOk = !!s.anonBundle && (!anonHasImages || s.imagesReviewed);
   return {
     1: setupOk,
     2: setupOk && filesOk,

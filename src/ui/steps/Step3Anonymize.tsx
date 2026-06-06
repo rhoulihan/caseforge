@@ -8,7 +8,14 @@ import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 import { detectCandidates, type DetectedPhrase, type PhraseType } from '../../anon/detect';
 import { suggestSlug, type MapEntry } from '../../anon/mapping';
-import type { EvidenceBundle } from '../../ingest/types';
+import type { EvidenceBundle, Primitive } from '../../ingest/types';
+
+interface ImgReview {
+  source: string;
+  url: string; // object URL of the REDACTED image (preview)
+  rectCount: number;
+  warning?: string;
+}
 
 const TYPES: PhraseType[] = ['org', 'person', 'host', 'term'];
 
@@ -28,6 +35,10 @@ export function Step3Anonymize() {
   const [error, setError] = useState('');
   const [newPhrase, setNewPhrase] = useState('');
   const [newType, setNewType] = useState<PhraseType>('term');
+  const [scanning, setScanning] = useState(false);
+  const [imgReview, setImgReview] = useState<ImgReview[]>([]);
+  const [redactedPrims, setRedactedPrims] = useState<Primitive[] | null>(null);
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
 
   // Detect candidates once per bundle (re-detect when a new bundle is dropped → detected reset to []).
   useEffect(() => {
@@ -70,7 +81,11 @@ export function Step3Anonymize() {
         state.bundle.primitives.map(async (p) => (p.kind === 'text' ? { ...p, text: (await launcher.anonymize(state.map, p.text)).text } : p)),
       );
       const anonBundle: EvidenceBundle = { files: state.bundle.files, primitives };
-      patch({ anonBundle });
+      // Fresh anonBundle carries the RAW images again → require a re-scan if any are present.
+      patch({ anonBundle, imagesReviewed: false });
+      setRedactedPrims(null);
+      setImgReview([]);
+      setExcluded(new Set());
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'launcher_error', title: 'Anonymization failed', context: { step: 3 } });
@@ -78,6 +93,46 @@ export function Step3Anonymize() {
       setBusy(false);
     }
   }
+
+  // OCR each image LOCALLY (no AI), black out matched customer text, and let the rep review before use.
+  async function scanImages(): Promise<void> {
+    if (!state.anonBundle || !state.config) return;
+    setScanning(true);
+    setError('');
+    try {
+      const { redactImageInBrowser } = await import('../../redaction/browser'); // code-split: loads tesseract only now
+      const review: ImgReview[] = [];
+      const prims = await Promise.all(
+        state.anonBundle.primitives.map(async (p) => {
+          if (p.kind !== 'image') return p;
+          const r = await redactImageInBrowser({ bytes: p.bytes, mime: p.mime }, state.map, state.config!.companyName);
+          review.push({ source: p.source, url: URL.createObjectURL(new Blob([new Uint8Array(r.bytes)], { type: p.mime })), rectCount: r.rectCount, warning: r.warning });
+          return { ...p, bytes: r.bytes };
+        }),
+      );
+      setRedactedPrims(prims);
+      setImgReview(review);
+      setExcluded(new Set());
+      patch({ anonBundle: { files: state.anonBundle.files, primitives: prims }, imagesReviewed: true });
+    } catch (e) {
+      setError((e as Error).message);
+      capture(e, { category: 'unexpected', title: 'Image scan failed', context: { step: 3 } });
+    } finally {
+      setScanning(false);
+    }
+  }
+
+  // Drop / re-include an image from the vision pass (the rep's lever when a preview looks wrong).
+  function toggleExclude(source: string): void {
+    if (!redactedPrims || !state.anonBundle) return;
+    const next = new Set(excluded);
+    if (next.has(source)) next.delete(source);
+    else next.add(source);
+    setExcluded(next);
+    patch({ anonBundle: { files: state.anonBundle.files, primitives: redactedPrims.filter((p) => p.kind !== 'image' || !next.has(p.source)) }, imagesReviewed: true });
+  }
+
+  const imageCount = state.anonBundle?.primitives.filter((p) => p.kind === 'image').length ?? 0;
 
   return (
     <section class="cf-card">
@@ -139,8 +194,42 @@ export function Step3Anonymize() {
         <button type="button" class="cf-btn" disabled={busy || state.map.length === 0} onClick={() => void anonymizeAll()}>
           {busy ? 'Anonymizing…' : state.anonBundle ? 'Re-anonymize' : 'Anonymize & continue →'}
         </button>
-        {state.anonBundle ? <span class="cf-ok">✓ {state.map.length} phrase(s) replaced — real text will never reach the AI. Click Next.</span> : null}
+        {state.anonBundle ? <span class="cf-ok">✓ {state.map.length} phrase(s) replaced — real text will never reach the AI.</span> : null}
       </div>
+
+      {imageCount > 0 ? (
+        <div class="cf-imgreview">
+          <h3>Images ({imageCount})</h3>
+          <p class="cf-sub">
+            Chart/screenshot images are read by the AI's vision model. Scan them locally (OCR — no AI) to black out any customer-identifying
+            text first, then review each before continuing.
+          </p>
+          {!state.imagesReviewed ? (
+            <button type="button" class="cf-btn" disabled={scanning} onClick={() => void scanImages()}>
+              {scanning ? 'Scanning images…' : `Scan & redact ${imageCount} image(s)`}
+            </button>
+          ) : (
+            <>
+              <div class="cf-imggrid">
+                {imgReview.map((r) => (
+                  <figure key={r.source} class={`cf-imgcard${excluded.has(r.source) ? ' excluded' : ''}`}>
+                    <img src={r.url} alt={`redacted preview of ${r.source}`} />
+                    <figcaption>
+                      <span class="cf-muted">{r.source}</span>
+                      <span>{r.rectCount > 0 ? `✓ ${r.rectCount} region(s) blacked out` : 'no matching text found'}</span>
+                      {r.warning ? <span class="cf-error">⚠ {r.warning}</span> : null}
+                      <label>
+                        <input type="checkbox" checked={!excluded.has(r.source)} onChange={() => toggleExclude(r.source)} /> send this image to the AI
+                      </label>
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+              <p class="cf-ok">✓ Images reviewed. Click Next.</p>
+            </>
+          )}
+        </div>
+      ) : null}
     </section>
   );
 }

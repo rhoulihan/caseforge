@@ -380,6 +380,54 @@ body {
   margin-top: 16px;
 }
 
+/* --- Step 3 image review (OCR redaction) --- */
+.cf-imgreview {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cf-border);
+}
+.cf-imgreview h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: var(--cf-slate);
+}
+.cf-imggrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 12px 0;
+}
+.cf-imgcard {
+  margin: 0;
+  border: 1px solid var(--cf-border);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--cf-surface);
+}
+.cf-imgcard.excluded {
+  opacity: 0.5;
+}
+.cf-imgcard img {
+  width: 100%;
+  height: auto;
+  border-radius: 5px;
+  display: block;
+  background: #f1f5f9;
+}
+.cf-imgcard figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  font-size: 0.82rem;
+}
+.cf-imgcard figcaption label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--cf-slate);
+}
+
 /* --- Sufficiency verdict + gate --- */
 .cf-verdict {
   display: flex;

@@ -8,12 +8,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "vite",
+    "setup:ocr": "node scripts/setup-tesseract-assets.mjs",
+    "dev": "node scripts/setup-tesseract-assets.mjs && vite",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "build": "vite build"
+    "build": "node scripts/setup-tesseract-assets.mjs && vite build"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.5",
@@ -36,6 +37,8 @@
     "jszip": "^3.10.1",
     "postal-mime": "^2.7.4",
     "preact": "^10.29.2",
+    "tesseract.js": "^7.0.0",
+    "tesseract.js-core": "^6.1.2",
     "unpdf": "^1.6.2"
   }
 }
