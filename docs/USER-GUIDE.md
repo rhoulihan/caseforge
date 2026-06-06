@@ -21,7 +21,7 @@ You don't need to be technical to use CaseForge. This guide walks you through it
 
 - **A Windows, Mac, or Linux laptop.** Nothing to install — CaseForge is a single download.
 - **An API key** from Claude (Anthropic) or OpenAI. This is how CaseForge uses the AI, billed to *your* account. Getting one takes a few minutes the first time.
-- **The customer's files** — whatever they sent: spreadsheets (`.xlsx`), PDFs, emails (`.msg`), CSVs, screenshots. CaseForge figures out what's useful and ignores the rest.
+- **The customer's files** — whatever they sent: spreadsheets (`.xlsx`), Word (`.docx`), PowerPoint (`.pptx`), PDFs, emails (`.msg`/`.eml`), web/markup (`.html`/`.xml`/`.rtf`), CSVs, and screenshots (`.png`/`.jpg`/`.webp`). CaseForge figures out what's useful and ignores the rest. (Legacy `.xls`/`.doc` aren't read — re-save as `.xlsx`/`.docx` or PDF.)
 
 ---
 

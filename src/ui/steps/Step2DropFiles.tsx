@@ -39,7 +39,7 @@ export function Step2DropFiles() {
   return (
     <section class="cf-card">
       <h2>2 · Drop files</h2>
-      <p class="cf-sub">Drop the customer's artifacts (.xlsx, .pdf, .msg, .csv, images…). Parsed locally — nothing is sent anywhere yet.</p>
+      <p class="cf-sub">Drop the customer's artifacts (.xlsx, .docx, .pptx, .pdf, .msg/.eml, .csv, .html, images…). Parsed locally — nothing is sent anywhere yet.</p>
 
       <div
         class="cf-dropzone"

@@ -33,6 +33,8 @@
   "dependencies": {
     "@kenjiuno/msgreader": "^1.28.0",
     "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
+    "postal-mime": "^2.7.4",
     "preact": "^10.29.2",
     "unpdf": "^1.6.2"
   }

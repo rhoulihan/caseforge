@@ -1,10 +1,23 @@
 export type DetectedType =
   | 'pdf'
-  | 'ooxml' // zip-based Office (xlsx/docx/pptx)
-  | 'ole' // OLE2 compound (msg/xls/doc)
+  // zip-based Office (OOXML) — disambiguated by container contents; 'ooxml' is the ambiguous fallback
+  | 'xlsx'
+  | 'docx'
+  | 'pptx'
+  | 'ooxml'
+  // OLE2 compound — disambiguated by stream names; 'ole' is the ambiguous fallback
+  | 'msg'
+  | 'xls'
+  | 'doc'
+  | 'ole'
+  | 'eml' // RFC822 email
   | 'png'
   | 'jpeg'
   | 'gif'
+  | 'webp'
+  | 'html'
+  | 'xml'
+  | 'rtf'
   | 'json'
   | 'csv'
   | 'tsv'

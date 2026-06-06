@@ -5,7 +5,7 @@
 CaseForge is a self-contained, browser-based tool for the field salesforce. A rep runs a tiny launcher, brings their own **Claude or OpenAI** API key, and walks a 7-step wizard that reproduces an expert sizing → proposal → business-case workflow:
 
 1. **Setup** — pick a provider, paste an API key (kept in the browser session only, never written to disk), set a token budget.
-2. **Drop files** — drag in whatever the customer sent (xlsx, pdf, .msg, csv, images); parsed **locally**, nothing leaves the machine.
+2. **Drop files** — drag in whatever the customer sent (xlsx, docx, pptx, pdf, .msg/.eml, csv, html, images…); parsed **locally**, nothing leaves the machine.
 3. **Anonymize** — sensitive phrases are detected locally (no AI) and replaced with opaque slugs **before any AI call**; the rep reviews a fail-closed map.
 4. **Confirm** — a Data Intake & Sufficiency Report (Blocked / Directional / Engineering-grade) plus a one-screen gate to confirm assumptions or supply real values.
 5. **Generate** — deterministic sizing/TCO math runs in code (never the model); a live cost ticker shows spend while the AI only researches list prices, reads charts, and writes prose.

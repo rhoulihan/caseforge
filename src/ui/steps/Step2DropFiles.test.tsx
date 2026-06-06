@@ -7,7 +7,8 @@ const { ingestAsync } = vi.hoisted(() => {
   const fakeBundle = {
     files: [
       { name: 'sizing.csv', type: 'csv', ok: true },
-      { name: 'notes.docx', type: 'ooxml', ok: false, note: 'recognized but no extractor available yet' },
+      // a genuinely unsupported file (docx/pptx now extract; legacy .doc does not)
+      { name: 'legacy.doc', type: 'doc', ok: false, note: 'legacy Word (.doc) is not read — please re-save as .docx or export to PDF', errorCategory: 'unsupported_format' },
     ],
     primitives: [{ kind: 'table', source: 'sizing.csv', headers: ['x'], rows: [['1']] }],
   };
@@ -42,7 +43,7 @@ describe('Step2DropFiles', () => {
     await waitFor(() => expect(ingestAsync).toHaveBeenCalledTimes(1));
     await screen.findByText(/evidence item\(s\) extracted/i);
     expect(screen.getByText(/sizing\.csv/)).toBeTruthy();
-    expect(screen.getByText(/notes\.docx/)).toBeTruthy(); // unparsed file is still reported (⚠)
+    expect(screen.getByText(/legacy\.doc/)).toBeTruthy(); // unparsed file is still reported (⚠)
     await waitFor(() => expect(screen.getByTestId('prims').textContent).toBe('1')); // bundle patched into state
   });
 
