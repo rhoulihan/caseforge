@@ -1,0 +1,26 @@
+From: Priya Nair <priya.nair@meridianfreight.com>
+To: Solutions Team
+Subject: Meridian Freight Systems — moving our MongoDB Atlas estate to Oracle ADB
+
+Hi team,
+
+As discussed, we'd like to evaluate moving our production MongoDB Atlas cluster to Oracle
+Autonomous Database. Here's the current shape of the deployment so you can size it and put a
+cost comparison together.
+
+- It's a sharded Atlas cluster ("meridian-prod") on AWS — 3 shards.
+- Each shard runs M50 nodes (8 vCPU / 32 GB each). Home region is us-east-1 (3 electable
+  nodes per shard); we keep a cross-region warm standby in us-west-2 (2 electable per shard).
+- Logical data is about 1.8 TB; provisioned disk is 2,500 GB per node.
+- CPU runs moderate on the primaries day to day but spikes at month-end billing runs.
+- Our last monthly Atlas invoice was about $29,000 (≈ $348K/yr all-in) — I've attached the
+  itemized CSV and a describe-cluster export, plus a CPU utilization pull for May.
+- We run continuous (PITR) backup and would want comparable RPO/RTO on ADB.
+
+The Atlas bill is the number our CFO cares about — please base the savings case on that, not on
+a hypothetical self-managed build-out (we left self-managed years ago).
+
+Thanks,
+Priya Nair
+Director, Platform Engineering
+Meridian Freight Systems

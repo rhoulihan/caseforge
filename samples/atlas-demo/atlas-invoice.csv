@@ -1,0 +1,11 @@
+Date,Usage Date,SKU,Description,Project,Cluster,Region,Unit,Unit Price,Quantity,Amount
+2026-05-31,2026-05,ATLAS_INSTANCE_M50_AWS,Cluster instance M50 (electable) — home region,meridian-prod,meridian-prod,US_EAST_1,node-hours,2.00,6570,13140.00
+2026-05-31,2026-05,ATLAS_INSTANCE_M50_AWS,Cluster instance M50 (electable) — cross-region warm DR,meridian-prod,meridian-prod,US_WEST_2,node-hours,2.00,4380,8760.00
+2026-05-31,2026-05,ATLAS_CONFIG_SERVER,Config server instances (sharded cluster),meridian-prod,meridian-prod,US_EAST_1,node-hours,0.098,2190,215.00
+2026-05-31,2026-05,ATLAS_DATA_STORAGE_AWS,Provisioned data storage (gp3),meridian-prod,meridian-prod,US_EAST_1,GB-months,0.152,24934,3790.00
+2026-05-31,2026-05,ATLAS_BACKUP_CONTINUOUS,Continuous backup (PITR) — oplog + snapshot,meridian-prod,meridian-prod,US_EAST_1,GB-months,0.65,2000,1300.00
+2026-05-31,2026-05,ATLAS_BACKUP_SNAPSHOT_STORAGE,Cloud backup snapshot storage,meridian-prod,meridian-prod,US_EAST_1,GB-months,0.14,4571,640.00
+2026-05-31,2026-05,ATLAS_DATA_TRANSFER_CROSS_REGION,Data transfer — cross-region replication,meridian-prod,meridian-prod,US_WEST_2,GB,0.02,55000,1100.00
+2026-05-31,2026-05,ATLAS_SEARCH,Atlas Search (dedicated search nodes),meridian-prod,meridian-prod,US_EAST_1,node-hours,0.44,1454,640.00
+2026-05-31,2026-05,ATLAS_SUPPORT_ENTERPRISE,Premium support — Enterprise tier,meridian-prod,,,monthly,1600.00,1,1600.00
+2026-05-31,2026-05,ATLAS_COMMITMENT_DISCOUNT,Annual commitment discount,meridian-prod,,,credit,-2185.00,1,-2185.00
