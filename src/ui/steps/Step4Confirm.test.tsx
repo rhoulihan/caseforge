@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { describe, it, expect } from 'vitest';
 import { Step4Confirm } from './Step4Confirm';
 import { WizardProvider, useWizard } from '../WizardContext';
+import { ErrorProvider } from '../ErrorContext';
 import type { EvidenceBundle, KeyValuePrimitive, TablePrimitive, FileReport } from '../../ingest/types';
 
 // Heuristic-bindable evidence (keyvalue + table) → triage binds everything WITHOUT an LLM call.
@@ -31,10 +32,12 @@ function Readout() {
 
 function setup(anonBundle: EvidenceBundle) {
   return render(
-    <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, anonBundle }}>
-      <Step4Confirm />
-      <Readout />
-    </WizardProvider>,
+    <ErrorProvider>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, anonBundle }}>
+        <Step4Confirm />
+        <Readout />
+      </WizardProvider>
+    </ErrorProvider>,
   );
 }
 

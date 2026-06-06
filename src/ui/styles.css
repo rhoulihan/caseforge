@@ -53,6 +53,31 @@ body {
   max-width: 960px;
   margin: 0 auto;
   padding: 20px 24px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cf-header-titles {
+  min-width: 0;
+}
+.cf-header-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.cf-iconbtn {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-border);
+  border-radius: 7px;
+  padding: 6px 12px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--cf-slate);
+  cursor: pointer;
+}
+.cf-iconbtn:hover {
+  background: #f1f5f9;
 }
 
 .cf-header h1 {
@@ -504,4 +529,124 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+/* --- Modal overlay + dialog (error report / help / about) --- */
+.cf-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 1000;
+}
+.cf-modal {
+  background: var(--cf-surface);
+  border-radius: var(--cf-radius);
+  box-shadow: 0 10px 40px rgba(15, 23, 42, 0.25);
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+.cf-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--cf-border);
+  flex-shrink: 0;
+}
+.cf-modal-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: var(--cf-slate);
+}
+.cf-modal-body {
+  padding: 18px 20px;
+  overflow: auto;
+  flex: 1 1 0;
+  min-height: 0; /* allow the body to shrink + scroll instead of pushing the footer off-screen */
+}
+.cf-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--cf-border);
+  flex-shrink: 0;
+}
+
+/* --- Error report dialog --- */
+.cf-errlist {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.cf-errlist li {
+  padding: 8px 10px;
+  border: 1px solid var(--cf-border);
+  border-radius: 7px;
+  margin-bottom: 6px;
+  font-size: 0.9rem;
+}
+.cf-report-details {
+  margin: 10px 0;
+}
+.cf-report-details summary {
+  cursor: pointer;
+  color: var(--cf-blue);
+  font-size: 0.88rem;
+}
+.cf-report-preview {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--cf-bg);
+  border: 1px solid var(--cf-border);
+  border-radius: 7px;
+  padding: 10px;
+  margin-top: 8px;
+  max-height: 240px;
+  overflow: auto;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+}
+.cf-report-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.cf-linkbtn {
+  background: none;
+  border: 0;
+  color: var(--cf-blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* --- Help / FAQ list --- */
+.cf-faq {
+  margin: 0;
+}
+.cf-faq-item {
+  margin-bottom: 14px;
+}
+.cf-faq dt {
+  font-weight: 600;
+  color: var(--cf-slate);
+  margin-bottom: 2px;
+}
+.cf-faq dd {
+  margin: 0;
+  color: var(--cf-slate-2);
+  font-size: 0.92rem;
 }

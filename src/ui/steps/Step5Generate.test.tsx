@@ -9,6 +9,7 @@ vi.mock('../../research/tco', () => ({ researchTcoCosts: vi.fn(), sourcesToClaim
 
 import { Step5Generate } from './Step5Generate';
 import { WizardProvider, useWizard } from '../WizardContext';
+import { ErrorProvider } from '../ErrorContext';
 import type { TriageResult } from '../../classify/types';
 import type { EvidenceBundle } from '../../ingest/types';
 
@@ -22,10 +23,12 @@ function Readout() {
 
 function setup() {
   return render(
-    <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }}>
-      <Step5Generate />
-      <Readout />
-    </WizardProvider>,
+    <ErrorProvider>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }}>
+        <Step5Generate />
+        <Readout />
+      </WizardProvider>
+    </ErrorProvider>,
   );
 }
 

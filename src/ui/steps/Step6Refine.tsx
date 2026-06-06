@@ -5,6 +5,7 @@
 
 import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
+import { useErrors } from '../ErrorContext';
 import { generateProse } from '../../orchestrate/prose';
 import { renderBusinessCase, renderSizingBrief, renderTechnicalReview, renderClaimsChecklist } from '../../render';
 import { createLLM } from '../../provider';
@@ -15,6 +16,7 @@ const MODEL = 'claude-opus-4-8';
 
 export function Step6Refine() {
   const { state, patch, getApiKey } = useWizard();
+  const { capture } = useErrors();
   const [active, setActive] = useState(0);
   const [instr, setInstr] = useState('');
   const [busy, setBusy] = useState(false);
@@ -44,6 +46,7 @@ export function Step6Refine() {
       setInstr('');
     } catch (e) {
       setError((e as Error).message);
+      capture(e, { category: 'provider_error', title: 'Refine failed', context: { step: 6 } });
     } finally {
       setBusy(false);
     }

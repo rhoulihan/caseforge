@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { describe, it, expect } from 'vitest';
 import { Step3Anonymize } from './Step3Anonymize';
 import { WizardProvider, useWizard } from '../WizardContext';
+import { ErrorProvider } from '../ErrorContext';
 import type { LauncherClient } from '../../launcher/client';
 import type { EvidenceBundle } from '../../ingest/types';
 
@@ -32,10 +33,12 @@ function Readout() {
 
 function setup() {
   return render(
-    <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000 }, hasApiKey: true, bundle }} launcher={mockLauncher}>
-      <Step3Anonymize />
-      <Readout />
-    </WizardProvider>,
+    <ErrorProvider>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000 }, hasApiKey: true, bundle }} launcher={mockLauncher}>
+        <Step3Anonymize />
+        <Readout />
+      </WizardProvider>
+    </ErrorProvider>,
   );
 }
 

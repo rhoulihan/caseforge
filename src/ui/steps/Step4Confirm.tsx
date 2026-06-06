@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
+import { useErrors } from '../ErrorContext';
 import { MONGODB_PROFILE } from '../../profile/mongodb';
 import { triage } from '../../classify/triage';
 import { buildSufficiencyReport } from '../../classify/sufficiency';
@@ -72,6 +73,7 @@ function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer 
 
 export function Step4Confirm() {
   const { state, patch, getApiKey } = useWizard();
+  const { capture } = useErrors();
   const [report, setReport] = useState<SufficiencyReport | null>(null);
   const [gate, setGate] = useState<GateData | null>(null);
   const [answers, setAnswers] = useState<Record<string, GateAnswer>>({});
@@ -95,12 +97,16 @@ export function Step4Confirm() {
         setGate(buildGateData(suff, MONGODB_PROFILE));
         patch({ triage: tri });
       })
-      .catch((e) => alive && setError((e as Error).message))
+      .catch((e) => {
+        if (!alive) return;
+        setError((e as Error).message);
+        capture(e, { category: 'provider_error', title: 'Classification failed', context: { step: 4 } });
+      })
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [state.anonBundle, state.config, getApiKey, patch]);
+  }, [state.anonBundle, state.config, getApiKey, patch, capture]);
 
   const setAnswer = (id: string, a: GateAnswer | null): void =>
     setAnswers((prev) => {

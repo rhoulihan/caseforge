@@ -1,4 +1,4 @@
-import type { EvidenceBundle, Primitive, Extractor, AsyncExtractor, DetectedType, FileReport } from './types';
+import type { EvidenceBundle, Primitive, Extractor, AsyncExtractor, DetectedType, FileReport, FileErrorCategory } from './types';
 import { detectType } from './detect';
 import { parseDelimited } from './csv';
 
@@ -44,21 +44,26 @@ export function ingest(
   const reports: FileReport[] = [];
   for (const f of files) {
     const type = detectType(f.name, f.bytes);
-    let prims = builtinExtract(type, f.name, f.bytes);
-    if (prims === null && extra[type]) prims = extra[type]!(f.name, f.bytes);
+    const builtin = builtinExtract(type, f.name, f.bytes);
+    let prims = builtin;
+    const hasExtractor = builtin === null && !!extra[type];
+    if (hasExtractor) prims = extra[type]!(f.name, f.bytes);
     if (prims && prims.length) {
       primitives.push(...prims);
       reports.push({ name: f.name, type, ok: true });
     } else {
-      reports.push({
-        name: f.name,
-        type,
-        ok: false,
-        note: type === 'unknown' ? 'unrecognized file type' : 'recognized but no extractor available yet',
-      });
+      reports.push(failedReport(f.name, type, hasExtractor));
     }
   }
   return { primitives, files: reports };
+}
+
+/** Build the FileReport for a file we couldn't extract — classifies why (note + errorCategory). */
+function failedReport(name: string, type: DetectedType, hadExtractor: boolean, note?: string, errorCategory?: FileErrorCategory): FileReport {
+  if (type === 'unknown') return { name, type, ok: false, note: note ?? 'unrecognized file type', errorCategory: errorCategory ?? 'unsupported_format' };
+  if (errorCategory) return { name, type, ok: false, note, errorCategory }; // size/throw classified by the caller
+  if (hadExtractor) return { name, type, ok: false, note: note ?? 'could not extract any content (file may be empty or corrupt)', errorCategory: 'malformed_file' };
+  return { name, type, ok: false, note: note ?? 'recognized but no extractor available yet', errorCategory: 'unsupported_format' };
 }
 
 /**
@@ -74,18 +79,25 @@ export async function ingestAsync(
   const reports: FileReport[] = [];
   for (const f of files) {
     const type = detectType(f.name, f.bytes);
-    let prims = builtinExtract(type, f.name, f.bytes); // sync builtins (csv/json/text/images)
+    const builtin = builtinExtract(type, f.name, f.bytes); // sync builtins (csv/json/text/images)
+    let prims = builtin;
+    const hasExtractor = builtin === null && !!extra[type];
     let note: string | undefined;
-    if (prims === null && extra[type]) {
+    let errorCategory: FileErrorCategory | undefined;
+    if (hasExtractor) {
       if (f.bytes.length > MAX_PARSE_BYTES) {
         prims = [];
         note = 'file too large to parse safely';
+        errorCategory = 'file_too_large';
       } else {
         try {
           prims = await extra[type]!(f.name, f.bytes);
         } catch (e) {
           prims = [];
-          note = `extractor error: ${(e as Error).message}`;
+          // Cap + de-newline the third-party parser message so a content fragment can't ride into the report.
+          const msg = String((e as Error).message).replace(/[\r\n]+/g, ' ').slice(0, 120);
+          note = `extractor error: ${msg}`;
+          errorCategory = 'extractor_error';
         }
       }
     }
@@ -93,12 +105,7 @@ export async function ingestAsync(
       primitives.push(...prims);
       reports.push({ name: f.name, type, ok: true });
     } else {
-      reports.push({
-        name: f.name,
-        type,
-        ok: false,
-        note: note ?? (type === 'unknown' ? 'unrecognized file type' : 'recognized but no extractor available yet'),
-      });
+      reports.push(failedReport(f.name, type, hasExtractor, note, errorCategory));
     }
   }
   return { primitives, files: reports };
