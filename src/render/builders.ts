@@ -6,6 +6,7 @@ import type { SizingInputs, TcoInputs, Level, Range } from '../engine/types';
 import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../engine/tco';
 import { coldRtoHours } from '../engine/dr';
+import { ENGINE_CONFIG } from '../engine/config';
 import { PALETTE } from '../charts/svg';
 import type { CostChartData } from '../charts/costChart';
 import type { FiveYearChartData } from '../charts/fiveYearChart';
@@ -29,7 +30,7 @@ export interface EcpuStorageRates {
   hoursPerMonth?: number;
 }
 
-const DEFAULT_HRS_PER_MO = 730;
+const DEFAULT_HRS_PER_MO = ENGINE_CONFIG.adb.hoursPerMonth;
 
 function scenario(posture: 'conservative' | 'aggressive', n: number, inputs: SizingInputs, rates: EcpuStorageRates): SizingScenario {
   const c = consumedEcpu(inputs, 'workload');
@@ -54,7 +55,10 @@ function scenario(posture: 'conservative' | 'aggressive', n: number, inputs: Siz
 }
 
 export function buildSizingScenarios(inputs: SizingInputs, rates: EcpuStorageRates): SizingScenario[] {
-  return [scenario('conservative', 2, inputs, rates), scenario('aggressive', 3, inputs, rates)];
+  return [
+    scenario('conservative', ENGINE_CONFIG.sizing.conservativeDivisor, inputs, rates),
+    scenario('aggressive', ENGINE_CONFIG.sizing.aggressiveDivisor, inputs, rates),
+  ];
 }
 
 const range = (fn: (l: Level) => number): Range => ({ low: fn('low'), central: fn('central'), high: fn('high') });

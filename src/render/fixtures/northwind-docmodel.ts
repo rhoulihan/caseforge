@@ -8,16 +8,17 @@ import { NORTHWIND } from '../../engine/fixtures/northwind';
 import { consumedEcpu, baseFor, ceilings } from '../../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../../engine/tco';
 import { coldRtoHours } from '../../engine/dr';
+import { ENGINE_CONFIG } from '../../engine/config';
 import { PALETTE } from '../../charts/svg';
 import { fmtUsd } from '../shared';
 import type { Level, Range } from '../../engine/types';
 import type { SufficiencyReport, SignalCoverageItem } from '../../classify/sufficiency-types';
 import type { DocModel, SizingScenario, ClaimInput } from '../types';
 
-// ADB list rates — used only to populate the sizing-brief ECPU/storage table (illustrative).
-const ECPU_PER_HR = 0.0807;
-const HRS_PER_MO = 730;
-const STORAGE_PER_GB_MO = 0.1156;
+// ADB list rates — sourced from the central engine config so the fixture can't drift from the engine.
+const ECPU_PER_HR = ENGINE_CONFIG.adb.ecpuPerHr;
+const HRS_PER_MO = ENGINE_CONFIG.adb.hoursPerMonth;
+const STORAGE_PER_GB_MO = ENGINE_CONFIG.adb.storagePerGbMo;
 const DATA_COMPRESSED_GB = 45_800; // ~45.8 TB on-disk (compressed)
 
 const consumed = consumedEcpu(NORTHWIND_SIZING, 'workload'); // { avg 17.28, peak 43.2, ratio 2.5 }

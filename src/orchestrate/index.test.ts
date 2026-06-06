@@ -4,6 +4,7 @@ import { triage } from '../classify/triage';
 import { MONGODB_PROFILE } from '../profile/mongodb';
 import { NORTHWIND } from '../engine/fixtures/northwind';
 import { NORTHWIND_DOCMODEL } from '../render/fixtures/northwind-docmodel';
+import { ENGINE_CONFIG } from '../engine/config';
 import type { EvidenceBundle, TablePrimitive, KeyValuePrimitive, FileReport } from '../ingest/types';
 import type { LLM } from '../provider';
 
@@ -45,7 +46,7 @@ const baseConfig = (): RunConfig => ({
   targetPlatform: 'Oracle Autonomous Database',
   preparedDate: '2026-06-05',
   tcoInputs: NORTHWIND,
-  rates: { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, dataCompressedGb: 45_800 },
+  rates: { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo, dataCompressedGb: 45_800 },
   assumptions: ['32 vCPU per home node (to confirm)'],
   claims: NORTHWIND_DOCMODEL.claims,
   llm: mockLLM(),

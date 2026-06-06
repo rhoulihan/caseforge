@@ -6,9 +6,9 @@ AI is used only to research current list prices, read chart images, and write pr
 authoritative figure.
 
 > This document explains the model and its inputs. The numeric constants it relies on (the headroom
-> divisor, autoscale multipliers, DR restore rate, and ADB list rates) are being centralized into an
-> adjustable configuration so they can be updated when Oracle pricing or guidance changes — see the
-> "Tunable constants" section at the end.
+> divisor, autoscale multipliers, DR restore rate, and ADB list rates) are centralized in one adjustable
+> configuration — `src/engine/config.ts` — so they can be updated in a single place when Oracle pricing or
+> guidance changes. See §7 for the full table.
 
 ## 1. Sizing (compute)
 
@@ -96,19 +96,30 @@ presented as authoritative without the rep confirming it.
   the golden fixtures are **illustrative figures for a fictional reference customer**, used only to pin the
   deterministic tests — not a real customer.
 
-## 7. Tunable constants (being centralized)
+## 7. Tunable constants — `src/engine/config.ts`
 
-The following are the knobs most likely to change as Oracle pricing and guidance evolve. They are being
-extracted into a single adjustable configuration so updates from the Oracle team can be applied without
-touching the engine logic; each will be documented here with its source:
+The knobs most likely to change as Oracle pricing and guidance evolve are centralized in a single,
+documented configuration object — **[`src/engine/config.ts`](../src/engine/config.ts)** (`ENGINE_CONFIG`).
+Edit them there (one place) when an update arrives from the Oracle team, refresh the golden tests in the
+same change (a deliberate, reviewable record of the pricing/guidance update), and rebuild. The engine
+functions default to these values but accept an override argument, so tests — and the forthcoming Atlas
+source profile — can vary a single knob without forking the math.
 
-| Constant | Role | Current value |
-|---|---|---|
-| Peak-headroom divisor `n` | `base = ceil(max(Peak/n, Average))` | engine input |
-| Autoscale multipliers | provisioned band | 2× and 3× base |
-| Cold-DR RTO base + rate | `ceil(1 + dataTB/5)` h | 1 h + 1 h / 5 TB |
-| ADB ECPU / storage list rates | ADB cost lines | researched / default |
-| Five-year stream composition | Year-1 prove-out + migration | see §3 |
+| Constant (`ENGINE_CONFIG.*`) | Role | Default | Source |
+|---|---|---|---|
+| `adb.ecpuPerHr` | ADB compute cost line | **$0.0807 / ECPU-hr** | Oracle ADB list pricing |
+| `adb.storagePerGbMo` | ADB storage cost line | **$0.1156 / GB-mo** | Oracle ADB list pricing |
+| `adb.hoursPerMonth` | annualize the ECPU rate | **730** | 365×24/12 (standard billing month) |
+| `sizing.conservativeDivisor` | `base = ceil(max(Peak/n, Avg))` | **2** (Peak÷2) | CaseForge provisioning model (§1) |
+| `sizing.aggressiveDivisor` | aggressive base | **3** (Peak÷3) | CaseForge provisioning model (§1) |
+| `sizing.autoscaleMultipliers` | autoscale band on the base | **[2, 3]** (2× / 3×) | CaseForge provisioning model (§1) |
+| `sizing.ecpuPerVcpu` | consumed vCPU → ECPU | **1** (1:1, Phase-1) | CaseForge sizing assumption |
+| `dr.coldRtoBaseHours` | cold-DR restore base | **1 h** | Oracle backup-restore rule of thumb |
+| `dr.coldRtoHoursPerTb` | cold-DR restore per-TB | **0.2 h/TB** (= 1 h / 5 TB) | Oracle backup-restore rule of thumb |
 
-_Last updated alongside the v0.2.0 release. The per-constant sources will be filled in as the constants are
-moved into configuration._
+The five-year stream composition (Year-1 prove-out + one-time migration; Years 2–5 steady-state ADB) is
+structural and lives in `src/engine/tco.ts` (§3), not in the constant table. The on-prem TCO component
+estimates (license/hardware/facility/labor/…) are *customer-specific* — researched or rep-supplied at run
+time — and are deliberately **not** in this config (they are not Oracle formula constants). The MongoDB
+**Atlas** source profile will add an Atlas tier→vCPU lookup table to this same config — see
+[`ATLAS-SOURCE-PROFILE.md`](./ATLAS-SOURCE-PROFILE.md) §4.

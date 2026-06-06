@@ -6,8 +6,11 @@ import { NORTHWIND_DOCMODEL } from './fixtures/northwind-docmodel';
 import { buildCostChart } from '../charts/costChart';
 import { buildFiveYearChart } from '../charts/fiveYearChart';
 import { withinFrame, noCollisions } from '../charts/svg';
+import { ENGINE_CONFIG } from '../engine/config';
 
-const rates = { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, dataCompressedGb: 45_800 };
+// Rates from the central config (so this golden tests production rates); the asserted output numbers
+// below stay pinned — if a rate in config changes, those assertions fail and force a deliberate update.
+const rates = { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo, dataCompressedGb: 45_800 };
 
 describe('buildSizingScenarios', () => {
   const scenarios = buildSizingScenarios(NORTHWIND_SIZING, rates);
