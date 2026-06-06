@@ -2,15 +2,7 @@
 // carries real names (no slugs in the deliverables), so there is nothing to deanonymize.
 
 import { useWizard } from '../WizardContext';
-
-function download(filename: string, content: string, mime: string): void {
-  const url = URL.createObjectURL(new Blob([content], { type: mime }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
+import { download } from '../download';
 
 export function Step7Export() {
   const { state } = useWizard();

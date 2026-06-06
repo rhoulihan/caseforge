@@ -4,9 +4,11 @@
 
 import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
+import { useErrors } from '../ErrorContext';
 
 export function Step2DropFiles() {
   const { state, patch } = useWizard();
+  const { captureFileReports, breadcrumb, capture } = useErrors();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -22,8 +24,12 @@ export function Step2DropFiles() {
       const files = await Promise.all(arr.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
       const bundle = await ingestAsync(files, BINARY_EXTRACTORS);
       patch({ bundle, detected: [], map: [], anonBundle: null, triage: null, confirmed: false, pipeline: null }); // re-dropping invalidates downstream
+      breadcrumb('info', `ingested ${bundle.files.length} file(s), ${bundle.primitives.length} evidence item(s)`);
+      // Skipped/unsupported files are recorded and offered as an error report (the good files still flow through).
+      captureFileReports(bundle.files);
     } catch (e) {
       setError((e as Error).message);
+      capture(e, { category: 'unexpected', title: 'Could not read files', context: { step: 2 } });
     } finally {
       setBusy(false);
     }

@@ -35,11 +35,19 @@ export interface KeyValuePrimitive {
 }
 export type Primitive = TextPrimitive | TablePrimitive | ImagePrimitive | KeyValuePrimitive;
 
+/** Why a file failed to ingest — the file-relevant subset of the app-wide error categories. */
+export type FileErrorCategory =
+  | 'unsupported_format' // type unrecognized, or recognized but no extractor wired
+  | 'malformed_file' // an extractor ran but produced nothing (empty/corrupt)
+  | 'file_too_large' // skipped by the size guard before parsing
+  | 'extractor_error'; // an extractor threw
+
 export interface FileReport {
   name: string;
   type: DetectedType;
   ok: boolean; // true if we produced primitive(s) from it
   note?: string;
+  errorCategory?: FileErrorCategory; // set when ok === false, for error-reporting/triage
 }
 
 export interface EvidenceBundle {

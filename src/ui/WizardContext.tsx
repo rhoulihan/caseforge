@@ -24,6 +24,11 @@ export interface WizardStore {
 // Module-scoped session memory — cleared when the page unloads; never serialized into WizardState.
 let sessionApiKey = '';
 
+/** Read the session API key from outside the wizard tree (e.g. the error reporter, for redaction). */
+export function getSessionApiKey(): string {
+  return sessionApiKey;
+}
+
 const WizardCtx = createContext<WizardStore | null>(null);
 
 export function WizardProvider({

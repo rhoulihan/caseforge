@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/preact';
 import { describe, it, expect } from 'vitest';
 import { Wizard } from './Wizard';
 import { WizardProvider, useWizard } from './WizardContext';
+import { ErrorProvider } from './ErrorContext';
 
 // Harness exposing a control to satisfy Step 1 (config + api key) so we can test forward navigation.
 function Harness() {
@@ -25,9 +26,11 @@ function Harness() {
 
 function renderWizard() {
   return render(
-    <WizardProvider>
-      <Harness />
-    </WizardProvider>,
+    <ErrorProvider>
+      <WizardProvider>
+        <Harness />
+      </WizardProvider>
+    </ErrorProvider>,
   );
 }
 

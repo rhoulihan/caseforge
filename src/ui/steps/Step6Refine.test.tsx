@@ -13,6 +13,7 @@ vi.mock('../../render', () => ({
 
 import { Step6Refine } from './Step6Refine';
 import { WizardProvider } from '../WizardContext';
+import { ErrorProvider } from '../ErrorContext';
 import type { DocModel } from '../../render/types';
 import type { PipelineOutput } from '../../orchestrate';
 
@@ -31,9 +32,11 @@ const pipeline = {
 
 function setup() {
   return render(
-    <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, pipeline }}>
-      <Step6Refine />
-    </WizardProvider>,
+    <ErrorProvider>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, pipeline }}>
+        <Step6Refine />
+      </WizardProvider>
+    </ErrorProvider>,
   );
 }
 

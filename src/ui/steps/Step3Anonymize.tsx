@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
+import { useErrors } from '../ErrorContext';
 import { detectCandidates, type DetectedPhrase, type PhraseType } from '../../anon/detect';
 import { suggestSlug, type MapEntry } from '../../anon/mapping';
 import type { EvidenceBundle } from '../../ingest/types';
@@ -21,6 +22,7 @@ function mapFor(detected: DetectedPhrase[]): MapEntry[] {
 
 export function Step3Anonymize() {
   const { state, patch, launcher } = useWizard();
+  const { capture } = useErrors();
   const [health, setHealth] = useState<'checking' | 'up' | 'down'>('checking');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -71,6 +73,7 @@ export function Step3Anonymize() {
       patch({ anonBundle });
     } catch (e) {
       setError((e as Error).message);
+      capture(e, { category: 'launcher_error', title: 'Anonymization failed', context: { step: 3 } });
     } finally {
       setBusy(false);
     }

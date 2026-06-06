@@ -18,6 +18,8 @@ vi.mock('../../ingest/binary', () => ({ BINARY_EXTRACTORS: {} }));
 
 import { Step2DropFiles } from './Step2DropFiles';
 import { WizardProvider, useWizard } from '../WizardContext';
+import { ErrorProvider } from '../ErrorContext';
+import { ErrorReportDialog } from '../modals/ErrorReportDialog';
 
 function Readout() {
   const { state } = useWizard();
@@ -27,10 +29,12 @@ function Readout() {
 describe('Step2DropFiles', () => {
   it('ingests selected files locally, patches the bundle, and shows the per-file report', async () => {
     render(
-      <WizardProvider>
-        <Step2DropFiles />
-        <Readout />
-      </WizardProvider>,
+      <ErrorProvider>
+        <WizardProvider>
+          <Step2DropFiles />
+          <Readout />
+        </WizardProvider>
+      </ErrorProvider>,
     );
     const file = new File(['x,y\n1,2'], 'sizing.csv', { type: 'text/csv' });
     fireEvent.change(screen.getByLabelText('Choose files'), { target: { files: [file] } });
@@ -40,5 +44,22 @@ describe('Step2DropFiles', () => {
     expect(screen.getByText(/sizing\.csv/)).toBeTruthy();
     expect(screen.getByText(/notes\.docx/)).toBeTruthy(); // unparsed file is still reported (⚠)
     await waitFor(() => expect(screen.getByTestId('prims').textContent).toBe('1')); // bundle patched into state
+  });
+
+  it('auto-opens the error-report dialog when a dropped file is skipped/unsupported', async () => {
+    render(
+      <ErrorProvider>
+        <WizardProvider>
+          <Step2DropFiles />
+          <ErrorReportDialog />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    const file = new File(['x,y\n1,2'], 'sizing.csv', { type: 'text/csv' });
+    fireEvent.change(screen.getByLabelText('Choose files'), { target: { files: [file] } });
+    // The mocked bundle includes notes.docx (ok:false) → the report dialog should appear automatically.
+    await screen.findByRole('dialog');
+    expect(screen.getByText(/Send an error report/i)).toBeTruthy();
+    expect(screen.getAllByText(/unsupported file format/i).length).toBeGreaterThan(0);
   });
 });

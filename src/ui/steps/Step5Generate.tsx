@@ -4,6 +4,7 @@
 
 import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
+import { useErrors } from '../ErrorContext';
 import { runPipeline } from '../../orchestrate';
 import { researchTcoCosts, sourcesToClaims } from '../../research/tco';
 import { createLLM } from '../../provider';
@@ -18,6 +19,7 @@ const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
 export function Step5Generate() {
   const { state, patch, getApiKey } = useWizard();
+  const { capture, breadcrumb } = useErrors();
   const [tco, setTco] = useState<TcoInputs>(DEFAULT_TCO_INPUTS);
   const [claims, setClaims] = useState<ClaimInput[]>([]);
   const [researched, setResearched] = useState(false);
@@ -38,6 +40,8 @@ export function Step5Generate() {
       setResearched(true);
     } catch (e) {
       setError(`Cost research failed (you can still generate with defaults): ${(e as Error).message}`);
+      // Soft failure — surfaced inline; recorded for an optional report, but don't interrupt with the dialog.
+      capture(e, { category: 'provider_error', title: 'Cost research failed', context: { step: 5 }, open: false });
     } finally {
       setBusy('idle');
     }
@@ -58,9 +62,13 @@ export function Step5Generate() {
       });
       const out = await runPipeline(cfg);
       patch({ pipeline: out });
-      if (out.error) setError(out.error);
+      if (out.error) {
+        setError(out.error);
+        breadcrumb('warn', `pipeline returned a soft error: ${out.error}`);
+      }
     } catch (e) {
       setError((e as Error).message);
+      capture(e, { category: 'provider_error', title: 'Generation failed', context: { step: 5 } });
     } finally {
       setBusy('idle');
     }
