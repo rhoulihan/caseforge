@@ -1,0 +1,108 @@
+name: Release
+on:
+  workflow_dispatch: {}
+  push:
+    tags: ['v*']
+
+# Opt into the Node 24 action runtime now (Node 20 actions are being deprecated on GitHub runners).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write # create releases + upload assets on tag builds
+
+jobs:
+  build-spa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spa-dist
+          path: dist
+          retention-days: 1
+
+  package:
+    needs: build-spa
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64, ext: '' }
+          - { goos: linux, goarch: arm64, ext: '' }
+          - { goos: darwin, goarch: amd64, ext: '' }
+          - { goos: darwin, goarch: arm64, ext: '' }
+          - { goos: windows, goarch: amd64, ext: '.exe' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - uses: actions/download-artifact@v4
+        with:
+          name: spa-dist
+          path: dist
+      - name: Cross-compile the launcher
+        working-directory: launcher
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: go build -trimpath -ldflags='-s -w' -o "../caseforge${{ matrix.ext }}" .
+      - name: Bundle (launcher + SPA + double-click start file + guide)
+        run: |
+          name="caseforge-${{ matrix.goos }}-${{ matrix.goarch }}"
+          dir="pkg/$name"
+          mkdir -p "$dir/dist"
+          cp -r dist/* "$dir/dist/"
+          cp "caseforge${{ matrix.ext }}" "$dir/"
+          chmod +x "$dir/caseforge${{ matrix.ext }}" || true
+          # The non-technical entry point: a double-clickable start file for this OS.
+          case "${{ matrix.goos }}" in
+            linux)   cp packaging/start-linux.sh   "$dir/"; chmod +x "$dir/start-linux.sh" ;;
+            darwin)  cp packaging/start-mac.command "$dir/"; chmod +x "$dir/start-mac.command" ;;
+            windows) cp packaging/start-windows.bat "$dir/" ;;
+          esac
+          cp docs/USER-GUIDE.md "$dir/Guide.md"
+          cp -r samples "$dir/samples" # fictional demo artifacts so reps can try the flow immediately
+          cat > "$dir/RUN.txt" <<'TXT'
+          CaseForge — start here
+
+          1. Double-click the start file for your computer:
+               Windows:  start-windows.bat
+               Mac:      start-mac.command   (first time: right-click -> Open)
+               Linux:    start-linux.sh
+          2. Your web browser opens to CaseForge. Bring your Claude or OpenAI API key.
+
+          Full walkthrough: see Guide.md. Everything runs on this machine only (127.0.0.1);
+          customer files are read in your browser and real names are anonymized before any AI call.
+          TXT
+          ( cd pkg && zip -r "../$name.zip" "$name" )
+      - uses: actions/upload-artifact@v4
+        with:
+          name: caseforge-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: caseforge-*.zip
+
+  release:
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: caseforge-*
+          path: artifacts
+          merge-multiple: true
+      - name: Create the GitHub release with all platform zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" artifacts/caseforge-*.zip --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes

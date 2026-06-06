@@ -1,0 +1,60 @@
+import { describe, it, expect } from 'vitest';
+import { buildRunConfig, dataGbFromTriage, tcoProfileFromState, DEFAULT_TCO_INPUTS } from './pipeline';
+import { initialWizardState, type WizardState } from './state';
+import type { TriageResult } from '../classify/types';
+import type { EvidenceBundle } from '../ingest/types';
+
+const anonBundle: EvidenceBundle = { files: [], primitives: [{ kind: 'text', source: 'a', text: 'CF_ORG_01 migration' }] };
+
+const triage = {
+  profileId: 'mongodb',
+  inventory: [],
+  bindings: [
+    { signalId: 'cluster.shardCount', value: 3, method: 'keyvalue', confidence: 1, evidence: [] },
+    { signalId: 'node.hoVcpu', value: 32, method: 'keyvalue', confidence: 1, evidence: [] },
+    { signalId: 'data.storageSizeGb', value: 2000, method: 'numeric-series', confidence: 1, evidence: [] },
+  ],
+} as unknown as TriageResult;
+
+function stateWith(over: Partial<WizardState> = {}): WizardState {
+  return {
+    ...initialWizardState(),
+    config: { provider: 'claude', companyName: 'Northwind Mutual', tokenBudget: 250_000 },
+    hasApiKey: true,
+    bundle: anonBundle,
+    anonBundle,
+    triage,
+    ...over,
+  };
+}
+
+describe('dataGbFromTriage', () => {
+  it('reads the storage signal, else falls back', () => {
+    expect(dataGbFromTriage(triage)).toBe(2000);
+    expect(dataGbFromTriage(null, 500)).toBe(500);
+  });
+});
+
+describe('tcoProfileFromState', () => {
+  it('builds a TcoProfile from bound topology signals', () => {
+    const p = tcoProfileFromState(stateWith());
+    expect(p).toMatchObject({ dbType: 'mongodb', shards: 3, hoVcpu: 32, dataCompressedGb: 2000, drPosture: 'warm' });
+  });
+});
+
+describe('buildRunConfig', () => {
+  it('assembles a RunConfig: anonymized bundle, REAL company name, cached triage, budget, rates from triage', () => {
+    const cfg = buildRunConfig({ state: stateWith(), apiKey: 'sk', tcoInputs: DEFAULT_TCO_INPUTS, claims: [], preparedDate: '2026-06-06' });
+    expect(cfg.bundle).toBe(anonBundle);
+    expect(cfg.companyName).toBe('Northwind Mutual'); // real name (safe — not in the LLM prose context)
+    expect(cfg.triage).toBe(triage); // reused, no re-classify
+    expect(cfg.budgetLimit).toEqual({ tokens: 250_000 });
+    expect(cfg.rates.dataCompressedGb).toBe(2000);
+    expect(cfg.profile.id).toBe('mongodb');
+    expect(typeof cfg.llm!.complete).toBe('function');
+  });
+
+  it('throws if the prerequisites are missing', () => {
+    expect(() => buildRunConfig({ state: stateWith({ triage: null }), apiKey: 'sk', tcoInputs: DEFAULT_TCO_INPUTS, claims: [], preparedDate: '2026-06-06' })).toThrow(/classification/);
+  });
+});

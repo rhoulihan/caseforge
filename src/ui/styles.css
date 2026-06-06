@@ -1,0 +1,507 @@
+/* CaseForge SPA base styles — Oracle house style, consistent with the generated deliverables
+   (palette + Segoe UI). Component styles live alongside their components and extend these tokens. */
+
+:root {
+  --cf-red: #c74634;
+  --cf-green: #16a34a;
+  --cf-blue: #2563eb;
+  --cf-slate: #334155;
+  --cf-slate-2: #64748b;
+  --cf-bg: #f8fafc;
+  --cf-surface: #ffffff;
+  --cf-border: #e2e8f0;
+  --cf-radius: 10px;
+  --cf-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --cf-font: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--cf-font);
+  color: var(--cf-slate);
+  background: var(--cf-bg);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cf-app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.cf-header {
+  background: var(--cf-surface);
+  border-bottom: 1px solid var(--cf-border);
+}
+
+.cf-header-bar {
+  height: 4px;
+  background: var(--cf-red);
+}
+
+.cf-header-inner {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 24px 16px;
+}
+
+.cf-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--cf-slate);
+}
+
+.cf-tagline {
+  margin: 2px 0 0;
+  color: var(--cf-slate-2);
+  font-size: 0.95rem;
+}
+
+.cf-main {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 28px 24px;
+}
+
+.cf-card {
+  background: var(--cf-surface);
+  border: 1px solid var(--cf-border);
+  border-radius: var(--cf-radius);
+  box-shadow: var(--cf-shadow);
+  padding: 24px;
+}
+
+.cf-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.15rem;
+  color: var(--cf-slate);
+}
+
+.cf-footer {
+  border-top: 1px solid var(--cf-border);
+  background: var(--cf-surface);
+  color: var(--cf-slate-2);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 14px 24px;
+}
+
+/* --- Wizard shell: left stepper rail + content --- */
+.cf-wizard {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.cf-stepper {
+  flex: 0 0 200px;
+}
+.cf-stepper ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.cf-stepper li {
+  margin: 0;
+}
+.cf-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-left: 3px solid transparent;
+  padding: 9px 12px;
+  font: inherit;
+  color: var(--cf-slate-2);
+  cursor: pointer;
+  border-radius: 0 6px 6px 0;
+}
+.cf-step:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+.cf-step.on {
+  color: var(--cf-red);
+  font-weight: 600;
+  border-left-color: var(--cf-red);
+  background: var(--cf-surface);
+}
+.cf-step.done {
+  color: var(--cf-green);
+}
+.cf-step.locked,
+.cf-step:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
+}
+.cf-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: var(--cf-slate);
+  font-size: 0.8rem;
+  flex: 0 0 auto;
+}
+.cf-step.on .cf-step-num {
+  background: var(--cf-red);
+  color: #fff;
+}
+.cf-step.done .cf-step-num {
+  background: var(--cf-green);
+  color: #fff;
+}
+
+.cf-wizard-main {
+  flex: 1;
+  min-width: 0;
+}
+.cf-wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.cf-btn {
+  background: var(--cf-red);
+  color: #fff;
+  border: 0;
+  border-radius: 7px;
+  padding: 9px 18px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cf-btn.ghost {
+  background: var(--cf-surface);
+  color: var(--cf-slate);
+  border: 1px solid var(--cf-border);
+}
+.cf-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- Step forms / drop zone / file report --- */
+.cf-sub {
+  color: var(--cf-slate-2);
+  margin: 0 0 16px;
+}
+.cf-field {
+  display: block;
+  margin-bottom: 14px;
+}
+.cf-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--cf-slate-2);
+  margin-bottom: 4px;
+}
+.cf-field input[type='text'],
+.cf-field input[type='password'],
+.cf-field input[type='number'] {
+  width: 100%;
+  max-width: 420px;
+  padding: 8px 10px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+  box-sizing: border-box;
+}
+.cf-radios {
+  display: flex;
+  gap: 18px;
+}
+.cf-hint {
+  color: var(--cf-slate-2);
+  font-size: 0.85rem;
+}
+.cf-ok {
+  color: var(--cf-green);
+  font-size: 0.85rem;
+}
+.cf-error {
+  color: var(--cf-red);
+  font-size: 0.85rem;
+}
+.cf-dropzone {
+  border: 2px dashed var(--cf-border);
+  border-radius: 10px;
+  padding: 28px;
+  text-align: center;
+  color: var(--cf-slate-2);
+  background: var(--cf-bg);
+}
+.cf-filereport {
+  margin-top: 14px;
+}
+.cf-filereport ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.cf-filereport li {
+  padding: 3px 0;
+  font-size: 0.9rem;
+}
+.cf-filereport li.bad {
+  color: #92400e;
+}
+.cf-muted {
+  color: var(--cf-slate-2);
+  font-size: 0.85rem;
+}
+
+/* --- Anonymize map table --- */
+.cf-maptable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin-top: 8px;
+}
+.cf-maptable th {
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--cf-slate-2);
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--cf-border);
+}
+.cf-maptable th.num,
+.cf-maptable td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.cf-maptable td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.cf-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  background: #eef2ff;
+  color: #3730a3;
+}
+.cf-badge.org {
+  background: #fef2f2;
+  color: #991b1b;
+}
+.cf-badge.person {
+  background: #eff6ff;
+  color: #1e40af;
+}
+.cf-badge.host {
+  background: #f0fdfa;
+  color: #0f766e;
+}
+.cf-slug {
+  background: #f1f5f9;
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+}
+.cf-x {
+  border: 0;
+  background: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.cf-addrow {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.cf-addrow input {
+  flex: 1;
+  padding: 7px 9px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+}
+.cf-addrow select {
+  padding: 7px 9px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+}
+.cf-anon-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+/* --- Sufficiency verdict + gate --- */
+.cf-verdict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 9px;
+  padding: 11px 14px;
+  border: 1px solid var(--cf-border);
+}
+.cf-verdict.directional-estimate {
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+.cf-verdict.engineering-grade {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+}
+.cf-verdict.blocked {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.cf-vbadge {
+  font-weight: 800;
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: #fff;
+  white-space: nowrap;
+  background: var(--cf-slate-2);
+}
+.cf-verdict.directional-estimate .cf-vbadge {
+  background: #f59e0b;
+}
+.cf-verdict.engineering-grade .cf-vbadge {
+  background: var(--cf-green);
+}
+.cf-verdict.blocked .cf-vbadge {
+  background: var(--cf-red);
+}
+.cf-gate {
+  border: 1px solid #fde68a;
+  background: #fffdf5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.cf-gate-head {
+  margin-bottom: 2px;
+}
+.cf-gate-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+.cf-gate-input input[type='number'] {
+  width: 90px;
+  padding: 5px 8px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+}
+
+/* --- Cost ticker --- */
+.cf-ticker {
+  margin-top: 14px;
+  border: 1px solid var(--cf-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--cf-bg);
+}
+.cf-ticker ul {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  font-size: 0.88rem;
+}
+.cf-ticker li {
+  padding: 2px 0;
+}
+.cf-ticker-total {
+  font-size: 0.9rem;
+  color: var(--cf-slate);
+  border-top: 1px solid var(--cf-border);
+  padding-top: 6px;
+}
+
+/* --- Refine: tabs + doc preview + export --- */
+.cf-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--cf-border);
+  margin-bottom: 12px;
+}
+.cf-tab {
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: var(--cf-slate-2);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.cf-tab.on {
+  color: var(--cf-red);
+  border-bottom-color: var(--cf-red);
+  font-weight: 600;
+}
+.cf-docpreview {
+  border: 1px solid var(--cf-border);
+  border-radius: 8px;
+  padding: 16px;
+  max-height: 460px;
+  overflow: auto;
+  background: #fff;
+}
+.cf-refine {
+  margin-top: 16px;
+}
+.cf-chips {
+  margin: 6px 0;
+}
+.cf-chip {
+  display: inline-block;
+  border: 1px solid var(--cf-border);
+  border-radius: 999px;
+  padding: 4px 11px;
+  margin: 0 5px 5px 0;
+  background: var(--cf-surface);
+  color: var(--cf-slate);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.cf-ta {
+  width: 100%;
+  min-height: 60px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+.cf-export {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}

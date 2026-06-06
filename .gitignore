@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+app/dist/
+*.tsbuildinfo
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Launcher build artifacts (binaries are CI release artifacts, not committed)
+launcher/bin/
+launch-win.exe
+launch-mac
+launch-linux
+
+# Packaged release zips
+release/
+*.zip
+
+# Secrets / local env (API keys are entered in-app, never committed)
+.env
+.env.*
+*.key
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+
+# Visual companion mockups
+.superpowers/

@@ -1,0 +1,6 @@
+metric,value
+shards,3
+cores per node,32
+dr cores,16
+logical data size gb,3100
+storage size gb,2000

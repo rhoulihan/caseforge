@@ -1,0 +1,24 @@
+From: Jane Okafor <jane.okafor@northwind.com>
+To: Solutions Team
+Subject: Northwind Mutual Insurance — MongoDB sizing for the Oracle ADB migration
+
+Hi team,
+
+Following up on Project Atlas. Here's the current shape of our production MongoDB
+deployment at Northwind Mutual Insurance so you can size the move to Oracle Autonomous
+Database.
+
+- The cluster has 3 shards (data-bearing replica sets).
+- Each data-bearing node in the primary region has 32 vCPU.
+- Our DR region nodes are smaller — 16 vCPU each.
+- On-disk (compressed) data is roughly 2 TB and growing ~5% a quarter.
+- Primary cluster CPU runs fairly low on average but spikes hard at month-end close.
+
+The main production primary is db-prod-01.nw.local (10.20.30.40). DR replicates to
+db-dr-01.nw.local in our second data center.
+
+Let me know what else you need — happy to pull more from Ops Manager.
+
+Thanks,
+Jane Okafor
+Principal Engineer, Northwind Mutual Insurance
