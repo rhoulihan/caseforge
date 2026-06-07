@@ -209,11 +209,20 @@ func hasDotDot(p string) bool {
 	return false
 }
 
-func newMux(appDir string) http.Handler {
+// archivesDir is where business-case .zip archives are stored (created on first save).
+func archivesDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, "CaseForge", "archives")
+	}
+	return filepath.Join(os.TempDir(), "CaseForge", "archives")
+}
+
+func newMux(appDir, archiveDir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/anonymize", handleAnonymize)
 	mux.HandleFunc("/deanonymize", handleDeanonymize)
 	mux.HandleFunc("/health", handleHealth)
+	registerArchiveRoutes(mux, archiveDir)
 	mux.Handle("/", staticHandler(appDir))
 	// Reject raw ".." traversal with a flat 404 BEFORE ServeMux can 301-redirect to a cleaned path.
 	// (r.URL.Path is already percent-decoded, so %2e%2e is caught too.) Defense in depth on top of
@@ -286,7 +295,7 @@ func serveCLI(args []string) int {
 	}
 	url := fmt.Sprintf("http://127.0.0.1:%d", cfg.port)
 	// ReadHeaderTimeout caps slow-header (slowloris) clients; bodies are separately capped by MaxBytesReader.
-	srv := &http.Server{Handler: newMux(cfg.appDir), ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{Handler: newMux(cfg.appDir, archivesDir()), ReadHeaderTimeout: 10 * time.Second}
 	fmt.Printf("serving on %s from %s\n", url, cfg.appDir)
 	if !cfg.noOpen {
 		go openBrowser(url)

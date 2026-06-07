@@ -27,7 +27,7 @@ func post(t *testing.T, srv *httptest.Server, path, body string) (*http.Response
 
 func newTestServer(t *testing.T, appDir string) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(newMux(appDir))
+	srv := httptest.NewServer(newMux(appDir, t.TempDir()))
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -205,7 +205,7 @@ func TestStaticServing(t *testing.T) {
 }
 
 func TestStaticTraversalReturns404NotRedirect(t *testing.T) {
-	h := newMux(t.TempDir())
+	h := newMux(t.TempDir(), t.TempDir())
 	req := httptest.NewRequest("GET", "/", nil)
 	req.URL.Path = "/../../etc/passwd" // raw, uncleaned (a real client pre-cleans; this does not)
 	rec := httptest.NewRecorder()

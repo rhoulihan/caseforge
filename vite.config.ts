@@ -17,6 +17,8 @@ export default defineConfig({
       '/anonymize': LAUNCHER,
       '/deanonymize': LAUNCHER,
       '/health': LAUNCHER,
+      '/archive': LAUNCHER, // /archive/{id}
+      '/archives': LAUNCHER,
     },
   },
   test: {
