@@ -18,7 +18,9 @@ Goals:
 - **Add files later** — bring new artifacts into an existing case, anonymizing only the new ones (reusing the approved map), then regenerate.
 - **No new privacy surface** — only anonymized content ever reaches the LLM; archives are local-only and never uploaded.
 
-Non-goals (v1): cloud sync, multi-user sharing, archive encryption, editing the numeric model after generation (numbers stay engine-locked; refinement is wording-only, as today).
+Non-goals (v1): cloud sync, multi-user sharing, archive encryption.
+
+> **Regeneration recomputes — it does not replay frozen numbers.** Earlier drafts of this spec said "numbers stay engine-locked; refinement is wording-only." That was wrong and has been corrected: **every regeneration re-runs the current sizing + cost calculations** (current `ENGINE_CONFIG`, current rates, current discount, plus any newly added files), then rewrites prose on the fresh figures. This matters most for archives — a reopened case can be old enough that Oracle rates or our formula constants have changed since it was generated, and regenerating must reflect *today's* numbers. The mechanics live in the companion spec [Customer Discount & Always-Current Regeneration](./2026-06-07-discount-and-live-regeneration-design.md), which is a prerequisite PR (PR 0) for this feature.
 
 ## 2. What an archive is
 
@@ -48,6 +50,7 @@ Image bytes (`Uint8Array`) cannot live in JSON, so image primitives in `state.js
   "caseId": "northwind-mutual-k9f2a1",
   "companyName": "Northwind Mutual",
   "provider": "claude",
+  "discountPct": 15,                // per-case customer discount (see companion spec)
   "status": "generated",            // "generated" | "refined"
   "createdAt": "2026-06-07T18:20:00Z",
   "updatedAt": "2026-06-07T18:41:00Z",
@@ -120,6 +123,7 @@ Today the app always mounts at Step 1. We add a **pre-wizard home screen**:
 
 ## 7. Refinement continuity & instruction handling
 
+- **Regeneration recomputes numbers with current settings** (see the companion spec). On refine, `runPipeline` re-runs the deterministic sizing + TCO math from the cached triage using the current `ENGINE_CONFIG` and the current `discountPct`, then rewrites prose — so a reopened old case refreshes to today's rates rather than replaying the archived figures. *Viewing* a reopened case shows the last-generated numbers; *regenerating* supersedes them, with a "rates may have changed — Regenerate to refresh" hint on archive-opened cases.
 - `memory-state.json` carries `docModel` + an accumulating `refinementHistory[]`. Each refine appends its instruction; the next regeneration replays the history so the model has continuity.
 - **The refinement instruction is slug-anonymized before it reaches the LLM.** Today the instruction text is passed to `generateProse` raw (`src/orchestrate/prose.ts`) — if a rep types a real customer name in the refine box, it leaks. This is a latent gap we close as part of this feature: run the instruction through the launcher `/anonymize` with the current map; the LLM sees slugs, while the **raw** text is saved to `refinements/refinement-<n>.txt` (local only) and to `refinementHistory[].instruction`.
 
@@ -136,7 +140,7 @@ This reuses the existing downstream-reset cascade in `Step2DropFiles` (re-droppi
 
 ## 9. State changes (`src/ui/state.ts`)
 
-- `WizardState` gains: `caseId: string | null`, `refinementHistory: RefinementEntry[]`, `pendingRefinement: string | null`.
+- `WizardState` gains: `caseId: string | null`, `refinementHistory: RefinementEntry[]`, `pendingRefinement: string | null`. (`config.discountPct` is added by the companion spec and is persisted/rehydrated with the rest of `config`.)
 - New entry screen sits *before* the stepper; `initialWizardState()` is unchanged for "New", and a new `hydrateFromArchive(zip): Partial<WizardState>` produces the open-case state.
 - `stepValidity` is unchanged in spirit; the image fail-closed gate already added in v0.4.0 continues to apply to any images brought in via add-files.
 
@@ -152,7 +156,7 @@ Archives **contain customer PII** (the original `sources/` and the real-name del
 
 ## 12. Build sequencing (three PRs)
 
-Each PR is independently green and shippable:
+Each PR is independently green and shippable. **PR 0** (the companion [discount + always-current regeneration](./2026-06-07-discount-and-live-regeneration-design.md) spec) lands first — the archive refine/resume flow depends on regenerate-recomputes and persists `discountPct`.
 
 - **PR A — Archive core.** Zip schema + (de)serialize round-trip; Go endpoints + tests; save-on-generate; the home screen (New / Open / list / delete); open → hydrate → Step 6; inline API-key re-entry.
 - **PR B — Refine continuity.** `memory-state.json` + `refinementHistory` replay; instruction slug-anonymization; refinement `.txt` capture; update-on-refine.
