@@ -162,6 +162,20 @@ const recommended: SignalSpec[] = [
     collectWhy: 'Validates the CPU-util model is not masking a RAM-bound workload.',
   },
   {
+    id: 'node.atlasTier',
+    label: 'Atlas cluster tier (M10–M300)',
+    valueKind: 'enum',
+    criticality: 'recommended',
+    defaultable: true,
+    // No engineSlot: triage resolves the tier -> vCPU via ENGINE_CONFIG.atlasTierVcpu (table-lookup),
+    // synthesizing node.hoVcpu/node.drVcpu. Aliases deliberately exclude tier codes (M80, …) — those are
+    // too short and would substring-match noisily; the tier string is read by vision/llm-text instead.
+    derivableBy: ['vision', 'llm-text', 'keyvalue'],
+    aliases: ['instance size', 'cluster tier', 'atlas tier', 'instancesize', 'tier'],
+    collectRequest: 'Atlas cluster tier from the Atlas console or cluster-describe JSON (e.g. M80).',
+    collectWhy: 'Enables a deterministic vCPU lookup from the tier table without a manual vCPU entry.',
+  },
+  {
     id: 'disk.iops',
     label: 'Disk IOPS (avg & peak)',
     unit: 'IOPS',

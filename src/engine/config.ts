@@ -43,6 +43,13 @@ export interface EngineConfig {
   adb: AdbRates;
   sizing: SizingConfig;
   dr: DrConfig;
+  /**
+   * MongoDB Atlas cluster tier -> vCPU per node. Lets the engine resolve a tier code the LLM merely
+   * READS off an artifact ("M80") into the authoritative vCPU count — the LLM never emits the number,
+   * preserving the determinism boundary. An unknown tier is intentionally absent (-> gate-ask, never a
+   * guess). Source: docs/ATLAS-SOURCE-PROFILE.md §4 (AWS, illustrative).
+   */
+  atlasTierVcpu: Record<string, number>;
 }
 
 /**
@@ -54,9 +61,14 @@ export interface EngineConfig {
  *  - sizing divisors + autoscaleMultipliers  CaseForge Peak÷N provisioning model (SIZING-METHODOLOGY.md §1).
  *  - sizing.ecpuPerVcpu = 1 ................ Phase-1 maps consumed vCPU to ECPU 1:1.
  *  - dr.coldRto* ........................... Oracle backup-restore rule of thumb: 1 h + 1 h per 5 TB.
+ *  - atlasTierVcpu ......................... MongoDB Atlas tier -> vCPU/node (AWS, illustrative;
+ *                                            docs/ATLAS-SOURCE-PROFILE.md §4). M80=32 anchors to the
+ *                                            original hand sizing. Low-CPU variants (half the vCPU) are
+ *                                            intentionally omitted so an unknown tier becomes a gate ask.
  */
 export const ENGINE_CONFIG: EngineConfig = {
   adb: { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, hoursPerMonth: 730 },
   sizing: { conservativeDivisor: 2, aggressiveDivisor: 3, autoscaleMultipliers: [2, 3], ecpuPerVcpu: 1 },
   dr: { coldRtoBaseHours: 1, coldRtoHoursPerTb: 0.2 },
+  atlasTierVcpu: { M10: 2, M20: 2, M30: 2, M40: 4, M50: 8, M60: 16, M80: 32, M140: 48, M200: 64, M300: 96 },
 };
