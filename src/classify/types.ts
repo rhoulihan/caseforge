@@ -4,6 +4,7 @@
 
 import type { Primitive } from '../ingest/types';
 import type { DerivationMethod } from '../profile/types';
+import type { QualContext } from './qual-context';
 
 export type Coverage = 'satisfied' | 'partial' | 'missing';
 
@@ -38,4 +39,8 @@ export interface TriageResult {
   profileId: string;
   inventory: PrimitiveClassification[];
   bindings: BindingResult[];
+  /** Qualitative deliverable context mined alongside signals (concerns/objections/timeline/positioning). */
+  qualContext?: QualContext;
+  /** Set when any util panel role was assigned by the load/positional heuristic — surfaced for rep override. */
+  roleWarning?: string;
 }
