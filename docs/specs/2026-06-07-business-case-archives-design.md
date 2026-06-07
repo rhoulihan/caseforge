@@ -1,9 +1,33 @@
 # Design Spec — CaseForge: Business-Case Archives
 
-**Date:** 2026-06-07 · **Status:** Proposed (design — not yet implemented) · **Author:** Rick Houlihan + Claude<br>
+**Date:** 2026-06-07 · **Status:** Built (shipped across PRs #12–#15, on top of the PR #11 discount/regeneration prerequisite; part of the unreleased v0.4.0) · **Author:** Rick Houlihan + Claude<br>
 **One-line:** Persist each business case as a portable, launcher-managed `.zip` so a rep can close the app, reopen a prior case, refine it (with full continuity), and add more source files — all locally, with the same fail-closed anonymization guarantees as a fresh run.
 
-> Storage model decided: **launcher-managed archives** in `~/CaseForge/archives/*.zip` with a home screen that lists saved cases. This spec is the artifact to review before we decompose it into implementation plans.
+> Storage model decided: **launcher-managed archives** in `~/CaseForge/archives/*.zip` with a home screen that lists saved cases. The design body below stands; the **"As built"** section immediately following reconciles the handful of places where the shipped code settled differently from the sketch.
+
+---
+
+## As built (PRs #12–#15)
+
+The feature shipped as designed; a few details settled differently in code and are reconciled here. The design body (§§1–13) is otherwise accurate.
+
+- **Build sequencing landed as four PRs, not three.** The §12 plan was PR 0 (discount) + PR A/B/C. In practice **PR A was split in two**: PR #12 (the persistence *layer* — Go endpoints, the TS (de)serialize round-trip, the launcher client) and **PR A2** = PR #13 (the home screen + save-on-generate + open→hydrate→Step 6 + inline key). PR B (#14) and PR C (#15) match the spec. PR 0 is the companion [discount/regeneration](./2026-06-07-discount-and-live-regeneration-design.md) spec, shipped as PR #11.
+- **Zip layout is flatter than the §2 diagram.** What `src/archive/serialize.ts` actually writes:
+  ```
+  manifest.json        # launcher reads this for the list
+  state.json           # hydratable WizardState; the source + anonymized bundles live INLINE here
+  memory-state.json    # { currentVersion, refinementHistory } — the resume log
+  versions/NNN/        # docmodel.json + deliverables/*.html + meta.json — one per generation
+  sources/             # the original uploaded files, as dropped
+  blobs/*.bin          # raw image-primitive bytes (can't live in JSON), referenced from state.json
+  ```
+  There is **no separate `anonymized/` directory** — the anonymized bundle is part of `state.json`, with its image bytes externalized to `blobs/anon-*.bin` (the source bundle's images go to `blobs/source-*.bin`). There is **no `output/` directory** — deliverables live under `versions/NNN/deliverables/`. There is **no `refinements/refinement-<n>.txt`** — the raw refinement text is preserved in `memory-state.json`'s `refinementHistory[].instruction` (local) alongside the `.slugged` form actually sent; same guarantee (raw text kept local, only slugs sent), one fewer artifact.
+- **Add-files re-anonymizes the full bundle; only *detection* is incremental.** §8 step 3 said "only the new primitives are slugged." In code, only **detection** runs over the new primitives — `extendMap(existingMap, merged)` extends the approved map with new candidates while **preserving every existing slug** — and then the **whole bundle is re-anonymized against the extended map** (the `anonBundle` is rebuilt, triage/confirmed/pipeline reset). This is simpler and equally safe: every primitive, old or new, is slugged with the current map.
+- **`extendMap` seeds new slugs from the max existing index, not the count.** New slugs continue from the highest numeric index already present for each category prefix (e.g. `CF_ORG_03` even if only `CF_ORG_01` survives a removal), so removing a phrase and adding another of the same type can never reuse a live slug and collapse two real names. (A subtle bug caught in PR C review.)
+- **Two transient (non-serialized) navigation fields, not one.** §9 listed `pendingRefinement`; the shipped state (`src/ui/state.ts`) carries both `addFilesMode?` and `pendingRefinement?`, marked transient and excluded from `state.json`. `refinementHistory` is persisted in `memory-state.json` (not `state.json`); `caseId`/`caseCreatedAt` are restored from `manifest.json`, with `caseCreatedAt` preserved across re-saves so the original creation time survives.
+- **Routes are REST-shaped, with the id in the path.** §4 sketched `POST /archive` carrying the `caseId` in the body; the shipped routes are `PUT /archive/{id}`, `GET /archive/{id}`, `DELETE /archive/{id}`, and `GET /archives` (the upload is the raw zip bytes with `content-type: application/zip`). The browser client (`src/launcher/transport.ts`) gained `putBinary`/`getBytes`/`del` for exactly these.
+- **Launcher hardening went beyond the `..`-guard.** `launcher/archive.go` validates `{id}` against `^[a-z0-9][a-z0-9-]{0,63}$`, caps the upload at 200 MiB (distinguishing a `MaxBytesError` as HTTP 413), saves atomically (temp + rename), refuses a body that isn't a zip-with-`manifest.json`, and — added in review — resolves symlinks and confines every read/write inside the archive directory (`safeArchiveFile`), so a symlinked entry can't escape it. The list endpoint skips symlinked entries.
+- **Both Step 5 and Step 6 never wipe a good preview on a blocked/failed (re)generate**, and a save failure surfaces a visible warning rather than silently losing the deliverables (which remain exportable). The inline API-key prompt on an archive-opened case (§6) shipped as specified.
 
 ---
 

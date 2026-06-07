@@ -1,9 +1,24 @@
 # Design Spec — CaseForge: Customer Discount & Always-Current Regeneration
 
-**Date:** 2026-06-07 · **Status:** Proposed (design — not yet implemented) · **Author:** Rick Houlihan + Claude<br>
+**Date:** 2026-06-07 · **Status:** Built (shipped in PR #11; part of the unreleased v0.4.0) · **Author:** Rick Houlihan + Claude<br>
 **One-line:** Add a per-case customer discount to the cost model, and make "regenerate" always recompute the numbers with the *current* sizing/cost settings (not the figures frozen at first generation) — so a refined or reopened case reflects today's rates, today's formula config, and the rep's current discount.
 
 > This is a prerequisite for the [business-case archives](./2026-06-07-business-case-archives-design.md) feature: an archived case can be old, so reopening and refining it must refresh the numbers to current rates rather than replay stale ones.
+
+---
+
+## As built (PR #11)
+
+This shipped as designed (a single PR, Part A + Part B together, landing before the archive PRs). The design body below stands; a few details settled differently in code and are reconciled here:
+
+- **Discount lives in its own module.** `src/engine/discount.ts` exposes `discountFactor(pct)` (the `1 − pct/100` multiplier, NaN→0, clamped to `[0,100]`) and `applyDiscount(inputs, pct)`. `applyDiscount` scales only the proposed components (`adbPrimary`, `warmDrAdd`, `coldDrAdd`, `migrationPs`) and leaves `onpremComponents` (the baseline) untouched. `0%` is a **strict no-op** — it returns the same input reference, so the goldens stay byte-identical.
+- **Discount applied in `assembleDocModel`, before the TCO math** (`src/render/builders.ts`), not inside `buildTcoSection` as the design sketch implied. So savings, the five-year stream, payback, and both charts all read from the discounted figures.
+- **Sizing-scenario Oracle costs are discounted too.** The design framed list-vs-net as a Business-Case / Sizing-Brief *rendering* choice. In code the discount is broader: `assembleDocModel` also scales the sizing-scenario rates (`ecpuPerHr`, `storagePerGbMo`) by `discountFactor` so the indicative ADB cost in the **Sizing Brief** matches the Business Case — every customer-facing Oracle figure is consistent. Provisioning (ECPU counts) is unaffected; only the price scales. `DocModel.discountPct` is always carried; `DocModel.listAdbAnnual` (the pre-discount warm/cold annuals) is carried only when `discountPct > 0`, so the renderer can show "list → your price (N% off)".
+- **Prose context states the figures are net.** `buildProseContext` (`src/orchestrate/prose.ts`) injects a NOTE when `discountPct > 0` telling the LLM the Oracle figures already include the discount and the baseline does not — so the narrative says "your price", never "list". The LLM still never sees the raw discount percentage as an input it controls; it only sees resulting (anon-safe) figures.
+- **Always-current regeneration via `runPipeline`'s `proseInstruction`.** Both **Step 5 Generate** (`Step5Generate.tsx`) and **Step 6 Refine** (`Step6Refine.tsx`) call `runPipeline` with `proseInstruction`, the cached triage (no re-classify), the current `ENGINE_CONFIG`, and the current discount — so the numbers recompute from current settings rather than replaying the frozen `docModel`. Reopening an archived case and regenerating refreshes its numbers to today's rates.
+- **The Refine free-text box is untrusted → detect-and-blocked + slug-anonymized.** This privacy step was not in the original design but is load-bearing. The shared `prepareRefineInstruction` (`src/ui/refine.ts`) runs local name detection against the approved map and **blocks the refine (fail-closed)** if the instruction names anything not in the map; otherwise it slug-anonymizes the instruction and replays prior (already-slugged) refinements for continuity. The raw text never leaves the machine. Used by both Step 6 (Regenerate) and Step 5 (the carried add-files note).
+- **Step 5 and Step 6 never wipe a good preview on a blocked/failed recompute.** When `runPipeline` returns no `docModel` (blocked gate or error), both steps surface the reason and `return`, leaving the rep's existing deliverables intact instead of clearing them.
+- **Discount UI:** entered at **Step 1 Setup** (`WizardConfig.discountPct`, 0–100, default 0) and adjustable at **Step 6 Refine** (the numeric field whose `setDiscount` clamps to `[0,100]`); changing it and clicking Regenerate recomputes.
 
 ---
 
