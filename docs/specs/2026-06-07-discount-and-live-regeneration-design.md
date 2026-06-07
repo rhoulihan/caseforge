@@ -34,7 +34,7 @@ Make **Regenerate re-run the engine math**, not just prose:
 - The deterministic math is pure and LLM-free, so an unchanged-input refine yields identical numbers (stable), while a changed discount / changed config / added file flows straight through.
 
 ### Implication for old cases
-Reopening an archived case and regenerating **refreshes its numbers to today's rates/config** — by design. *Viewing* a reopened case shows the numbers as last generated (the archived `docModel` + rendered HTML); *regenerating* supersedes them with current figures. The Refine view shows a hint — "rates/formulas may have changed since this case was generated; Regenerate to refresh" — when the case was opened from an archive.
+Reopening an archived case and regenerating **refreshes its numbers to today's rates/config** — by design. *Viewing* a reopened case shows the numbers as last generated (the current version's `docModel` + rendered HTML); *regenerating* produces a **new content-package version** — it does **not** delete or overwrite the previous one (see the archive spec's versioning section), so the rep can always go back to what was generated before. The Refine view shows a hint — "rates/formulas may have changed since this case was generated; Regenerate to refresh" — when the case was opened from an archive.
 
 ## 4. Part B — Customer discount
 

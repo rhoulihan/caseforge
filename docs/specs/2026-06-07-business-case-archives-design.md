@@ -30,17 +30,26 @@ Division of labor — **all zip building/parsing lives in TypeScript** (JSZip is
 
 ```
 <caseId>.zip
-├── manifest.json       # caseId, companyName, provider, status, schemaVersion,
-│                       #   createdAt, updatedAt, refineCount, file index
+├── manifest.json       # caseId, companyName, provider, discountPct, status, schemaVersion,
+│                       #   createdAt, updatedAt, currentVersion, versions[] index
 ├── state.json          # the hydratable WizardState (minus the API key, minus raw image bytes)
-├── memory-state.json   # docModel + refinementHistory[]  ← the "resume" blob
+├── memory-state.json   # currentVersion pointer + refinementHistory[]  ← the "resume" log
 ├── sources/            # ORIGINAL uploaded files, exactly as dropped (contains PII)
 ├── anonymized/         # what the LLM saw: slugged text/tables as JSON, redacted images as PNG
-├── output/             # generated deliverables: *.html + caseforge-docmodel.json
+├── versions/           # every generated content package — NEVER overwritten on regen
+│   ├── 001/
+│   │   ├── docmodel.json          # the DocModel (numbers + prose + claims) for this version
+│   │   ├── deliverables/*.html    # the 4 rendered docs for this version
+│   │   └── meta.json              # createdAt, trigger (initial|refine|add-files), instruction?, discountPct
+│   └── 002/ …                     # each regenerate adds a new numbered version
 └── refinements/        # refinement-<n>.txt — the raw prompt text the rep typed
 ```
 
 Image bytes (`Uint8Array`) cannot live in JSON, so image primitives in `state.json` / `anonymized/` reference their zip entry by path; the browser lazily reads the bytes back from the zip on load.
+
+### Versioning — regeneration never deletes the prior content package
+
+Every generation produces a **content package** = the `DocModel` + the four rendered deliverables + a `meta.json` recording what produced it (timestamp, trigger, the refine instruction if any, the `discountPct` in effect). These are written to a new numbered `versions/NNN/` directory; **regeneration appends a new version and never overwrites or deletes earlier ones**. `manifest.json.currentVersion` names the latest; `memory-state.json` keeps the pointer + the refinement log (each `refinementHistory` entry references the `versionId` it produced). On open, the app loads `currentVersion`; the Refine/Export views offer a version picker so the rep can view, compare, or export any prior package. (Versions are cheap — HTML + JSON; if a future case accumulates very many, we can cap or prune oldest-beyond-N, but v1 keeps them all.)
 
 ### `manifest.json` (launcher reads this for the list)
 
@@ -54,23 +63,27 @@ Image bytes (`Uint8Array`) cannot live in JSON, so image primitives in `state.js
   "status": "generated",            // "generated" | "refined"
   "createdAt": "2026-06-07T18:20:00Z",
   "updatedAt": "2026-06-07T18:41:00Z",
-  "refineCount": 3,
-  "files": { "sources": 5, "anonymized": 6, "outputs": 4 }
-}
-```
-
-### `memory-state.json` (the resume blob)
-
-```jsonc
-{
-  "docModel": { /* the full DocModel: numbers + prose + claims */ },
-  "refinementHistory": [
-    { "ts": "2026-06-07T18:30:00Z", "instruction": "tighten the exec summary", "slugged": "tighten the exec summary" }
+  "currentVersion": "003",
+  "versions": [                     // append-only; never pruned in v1
+    { "id": "001", "createdAt": "2026-06-07T18:20:00Z", "trigger": "initial",    "discountPct": 0 },
+    { "id": "002", "createdAt": "2026-06-07T18:33:00Z", "trigger": "refine",     "discountPct": 0 },
+    { "id": "003", "createdAt": "2026-06-07T18:41:00Z", "trigger": "add-files",  "discountPct": 15 }
   ]
 }
 ```
 
-`slugged` is the anonymized form actually sent to the LLM (see §5). Storing both the raw `instruction` (local) and the `slugged` form keeps the archive faithful while guaranteeing the model only ever saw slugs.
+### `memory-state.json` (the resume log)
+
+```jsonc
+{
+  "currentVersion": "003",
+  "refinementHistory": [
+    { "ts": "2026-06-07T18:33:00Z", "instruction": "tighten the exec summary", "slugged": "tighten the exec summary", "versionId": "002" }
+  ]
+}
+```
+
+The current `DocModel` itself lives in `versions/<currentVersion>/docmodel.json` (not duplicated here). `slugged` is the anonymized form actually sent to the LLM (see §7); storing both the raw `instruction` (local) and the `slugged` form keeps the archive faithful while guaranteeing the model only ever saw slugs. Each entry references the `versionId` it produced.
 
 ## 3. Why "resume the conversation" becomes a memory-state file
 
@@ -100,8 +113,8 @@ Hardening (mirrors the existing launcher posture): `caseId` validated to `[a-z0-
 ## 5. Lifecycle
 
 - **Temporary archive = the current in-memory `WizardState`.** Nothing is persisted while the rep moves Setup → … → Generate. ("Collect data in a temporary archive that isn't saved" = exactly today's ephemeral state.)
-- **On successful Generate (Step 5):** assign a `caseId`, build the zip in TS, `POST /archive`. The case now exists on disk with `status: "generated"`.
-- **Update (re-POST the same `caseId`)** after each successful **refine**, **add-files**, or **export**; `updatedAt` / `refineCount` bump and `status` becomes `"refined"`.
+- **On successful Generate (Step 5):** assign a `caseId`, write content package `versions/001/`, build the zip in TS, `POST /archive`. The case now exists on disk with `status: "generated"`, `currentVersion: "001"`.
+- **Update (re-POST the same `caseId`)** after each successful **refine** or **add-files**: a **new** `versions/NNN/` is appended (prior versions untouched), `currentVersion` advances, `updatedAt` bumps, `status` becomes `"refined"`. Export does not create a version (it just downloads from the selected one).
 
 ## 6. Home screen & opening a case
 
