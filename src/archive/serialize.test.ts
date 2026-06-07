@@ -98,6 +98,26 @@ describe('archive serialize/deserialize', () => {
     expect(loaded.pipeline!.rendered[0]!.html).toBe('<h1>BC</h1>');
   });
 
+  it('round-trips a multi-version history (append-on-regen) + the refinement log', async () => {
+    const v1 = { id: '001', createdAt: 't1', trigger: 'initial' as const, discountPct: 0, docModel: { companyName: 'Acme Mutual' } as unknown as DocModel, rendered: [{ filename: 'bc.html', html: '<h1>v1</h1>' }] };
+    const v2 = { id: '002', createdAt: 't2', trigger: 'refine' as const, discountPct: 15, docModel: { companyName: 'Acme Mutual' } as unknown as DocModel, rendered: [{ filename: 'bc.html', html: '<h1>v2</h1>' }] };
+    const s = {
+      ...state,
+      versions: [v1, v2],
+      refinementHistory: [{ ts: 't2', instruction: 'make it concise', slugged: 'make it concise', versionId: '002' }],
+      pipeline: { ...pipeline, docModel: v2.docModel, rendered: v2.rendered },
+    } as unknown as WizardState;
+    const { manifest, state: loaded, refinementHistory } = await deserializeCase(await serializeCase(s, meta));
+    expect(manifest.currentVersion).toBe('002');
+    expect(manifest.status).toBe('refined'); // >1 version
+    expect(manifest.versions.map((v) => v.id)).toEqual(['001', '002']);
+    expect(loaded.versions!.map((v) => v.id)).toEqual(['001', '002']); // full history restored
+    expect(loaded.versions![1]!.rendered[0]!.html).toBe('<h1>v2</h1>');
+    expect(loaded.pipeline!.rendered[0]!.html).toBe('<h1>v2</h1>'); // preview = current (v2)
+    expect(refinementHistory[0]!.instruction).toBe('make it concise');
+    expect(loaded.refinementHistory![0]!.versionId).toBe('002');
+  });
+
   it('refuses to archive a case that has not been generated', async () => {
     const ungenerated = { ...state, pipeline: null } as unknown as WizardState;
     await expect(serializeCase(ungenerated, meta)).rejects.toThrow(/before it is generated/);

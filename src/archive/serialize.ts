@@ -8,13 +8,16 @@
 //   blobs/*.bin          raw image-primitive bytes referenced from state.json
 //
 // Image-primitive bytes can't live in JSON, so they're written as blob entries and referenced by path;
-// deserialize reads them back. 0-version handling and append-on-regen versioning are layered on later.
+// deserialize reads them back. Every generate/refine appends a versions/NNN content package (never
+// overwritten); manifest.currentVersion names the latest and memory-state holds the refinement log.
 
 import JSZip from 'jszip';
-import type { WizardState } from '../ui/state';
+import type { WizardState, ArchiveVersion, RefinementEntry } from '../ui/state';
 import type { EvidenceBundle, Primitive } from '../ingest/types';
 import type { PipelineOutput } from '../orchestrate';
 import type { DocModel } from '../render/types';
+
+export type { RefinementEntry }; // re-exported for callers that import it alongside the archive API
 
 const SCHEMA_VERSION = 1;
 
@@ -35,13 +38,6 @@ export interface ArchiveManifest {
   updatedAt: string;
   currentVersion: string;
   versions: { id: string; createdAt: string; trigger: 'initial' | 'refine' | 'add-files'; discountPct: number }[];
-}
-
-export interface RefinementEntry {
-  ts: string;
-  instruction: string;
-  slugged: string;
-  versionId: string;
 }
 
 export interface LoadedCase {
@@ -130,13 +126,22 @@ export async function serializeCase(state: WizardState, meta: ArchiveMeta): Prom
   };
   zip.file('state.json', JSON.stringify(stateJson));
 
-  // Content package — version 001 (append-on-regen versioning is layered on by the refine work).
-  const vdir = 'versions/001';
-  zip.file(`${vdir}/docmodel.json`, JSON.stringify(pipeline.docModel));
-  for (const r of pipeline.rendered) zip.file(`${vdir}/deliverables/${r.filename}`, r.html);
-  zip.file(`${vdir}/meta.json`, JSON.stringify({ id: '001', createdAt: meta.createdAt, trigger: 'initial', discountPct, deliverables: pipeline.rendered.map((r) => r.filename) }));
+  // Content packages — one per generation, never overwritten. Use the state's accumulated versions;
+  // fall back to a single 'initial' version derived from the current pipeline (a case saved before any
+  // refine, or via an older code path).
+  const versions: ArchiveVersion[] =
+    state.versions && state.versions.length > 0
+      ? state.versions
+      : [{ id: '001', createdAt: meta.createdAt, trigger: 'initial', discountPct, docModel: pipeline.docModel, rendered: pipeline.rendered }];
+  for (const v of versions) {
+    const vdir = `versions/${v.id}`;
+    zip.file(`${vdir}/docmodel.json`, JSON.stringify(v.docModel));
+    for (const r of v.rendered) zip.file(`${vdir}/deliverables/${r.filename}`, r.html);
+    zip.file(`${vdir}/meta.json`, JSON.stringify({ id: v.id, createdAt: v.createdAt, trigger: v.trigger, discountPct: v.discountPct, deliverables: v.rendered.map((r) => r.filename) }));
+  }
+  const currentVersion = versions[versions.length - 1]!.id;
 
-  zip.file('memory-state.json', JSON.stringify({ currentVersion: '001', refinementHistory: [] }));
+  zip.file('memory-state.json', JSON.stringify({ currentVersion, refinementHistory: state.refinementHistory ?? [] }));
 
   const manifest: ArchiveManifest = {
     schemaVersion: SCHEMA_VERSION,
@@ -144,11 +149,11 @@ export async function serializeCase(state: WizardState, meta: ArchiveMeta): Prom
     companyName: config?.companyName ?? '',
     provider: config?.provider ?? 'claude',
     discountPct,
-    status: 'generated',
+    status: versions.some((v) => v.trigger === 'refine' || v.trigger === 'add-files') ? 'refined' : 'generated',
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
-    currentVersion: '001',
-    versions: [{ id: '001', createdAt: meta.createdAt, trigger: 'initial', discountPct }],
+    currentVersion,
+    versions: versions.map((v) => ({ id: v.id, createdAt: v.createdAt, trigger: v.trigger, discountPct: v.discountPct })),
   };
   zip.file('manifest.json', JSON.stringify(manifest));
 
@@ -170,16 +175,23 @@ export async function deserializeCase(zipBytes: Uint8Array): Promise<LoadedCase>
     sources?: { name: string; path: string }[];
   };
   const memory = JSON.parse(await read('memory-state.json')) as { currentVersion: string; refinementHistory: RefinementEntry[] };
-  const cur = manifest.currentVersion;
-  const vdir = `versions/${cur}`;
-  const docModel = JSON.parse(await read(`${vdir}/docmodel.json`)) as DocModel;
-  const meta = JSON.parse(await read(`${vdir}/meta.json`)) as { deliverables?: string[] };
-  const names = Array.isArray(meta.deliverables) ? meta.deliverables : []; // tolerate a corrupt/old meta
-  const rendered = await Promise.all(names.map(async (filename) => ({ filename, html: await read(`${vdir}/deliverables/${filename}`) })));
+
+  // Restore EVERY content package (so the history survives a round trip) — the current one drives the preview.
+  const versions: ArchiveVersion[] = await Promise.all(
+    manifest.versions.map(async (mv) => {
+      const vdir = `versions/${mv.id}`;
+      const docModel = JSON.parse(await read(`${vdir}/docmodel.json`)) as DocModel;
+      const vmeta = JSON.parse(await read(`${vdir}/meta.json`)) as { deliverables?: string[] };
+      const names = Array.isArray(vmeta.deliverables) ? vmeta.deliverables : []; // tolerate a corrupt/old meta
+      const rendered = await Promise.all(names.map(async (filename) => ({ filename, html: await read(`${vdir}/deliverables/${filename}`) })));
+      return { id: mv.id, createdAt: mv.createdAt, trigger: mv.trigger, discountPct: mv.discountPct, docModel, rendered };
+    }),
+  );
+  const current = versions.find((v) => v.id === manifest.currentVersion) ?? versions[versions.length - 1]!;
 
   const pipeline: PipelineOutput = {
-    docModel,
-    rendered,
+    docModel: current.docModel,
+    rendered: current.rendered,
     usage: { inputTokens: 0, outputTokens: 0 },
     budgetLog: [],
     gate: { items: [], blocked: false, reasons: [] },
@@ -210,6 +222,8 @@ export async function deserializeCase(zipBytes: Uint8Array): Promise<LoadedCase>
     confirmed: stateJson.confirmed as boolean,
     tcoInputs: stateJson.tcoInputs as WizardState['tcoInputs'],
     pipeline,
+    versions,
+    refinementHistory: memory.refinementHistory ?? [],
   };
-  return { manifest, state, refinementHistory: memory.refinementHistory };
+  return { manifest, state, refinementHistory: memory.refinementHistory ?? [] };
 }
