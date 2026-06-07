@@ -107,6 +107,13 @@ export async function serializeCase(state: WizardState, meta: ArchiveMeta): Prom
   const discountPct = config?.discountPct ?? 0;
   const zip = new JSZip();
 
+  // Original uploaded files → sources/ (browsable in the zip; restored on open for add-files).
+  const sources = (state.rawFiles ?? []).map((f, i) => {
+    const path = `sources/${i}-${f.name.replace(/[/\\]/g, '_')}`;
+    zip.file(path, f.bytes);
+    return { name: f.name, path };
+  });
+
   const stateJson = {
     config,
     detected: state.detected,
@@ -117,6 +124,7 @@ export async function serializeCase(state: WizardState, meta: ArchiveMeta): Prom
     gateAnswers: state.gateAnswers,
     confirmed: state.confirmed,
     tcoInputs: state.tcoInputs,
+    sources,
     bundle: state.bundle ? bundleToJson(zip, state.bundle, 'source') : null,
     anonBundle: state.anonBundle ? bundleToJson(zip, state.anonBundle, 'anon') : null,
   };
@@ -156,7 +164,11 @@ export async function deserializeCase(zipBytes: Uint8Array): Promise<LoadedCase>
     return f.async('string');
   };
   const manifest = JSON.parse(await read('manifest.json')) as ArchiveManifest;
-  const stateJson = JSON.parse(await read('state.json')) as Record<string, unknown> & { bundle: JsonBundle | null; anonBundle: JsonBundle | null };
+  const stateJson = JSON.parse(await read('state.json')) as Record<string, unknown> & {
+    bundle: JsonBundle | null;
+    anonBundle: JsonBundle | null;
+    sources?: { name: string; path: string }[];
+  };
   const memory = JSON.parse(await read('memory-state.json')) as { currentVersion: string; refinementHistory: RefinementEntry[] };
   const cur = manifest.currentVersion;
   const vdir = `versions/${cur}`;
@@ -173,11 +185,21 @@ export async function deserializeCase(zipBytes: Uint8Array): Promise<LoadedCase>
     gate: { items: [], blocked: false, reasons: [] },
   };
 
+  const rawFiles = await Promise.all(
+    (stateJson.sources ?? []).map(async (s) => {
+      const f = zip.file(s.path);
+      return { name: s.name, bytes: f ? await f.async('uint8array') : new Uint8Array() };
+    }),
+  );
+
   const state: Partial<WizardState> = {
     step: 6, // open straight into Refine
+    caseId: manifest.caseId, // so a refine save updates THIS archive
+    caseCreatedAt: manifest.createdAt, // preserve the original creation time across re-saves
     config: stateJson.config as WizardState['config'],
     hasApiKey: false, // session-only; the rep re-enters it to refine
     bundle: await bundleFromJson(zip, stateJson.bundle),
+    rawFiles,
     detected: stateJson.detected as WizardState['detected'],
     map: stateJson.map as WizardState['map'],
     anonBundle: await bundleFromJson(zip, stateJson.anonBundle),

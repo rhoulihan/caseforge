@@ -6,6 +6,8 @@ import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 
+const MAX_ARCHIVE_SOURCE_BYTES = 50 * 1024 * 1024; // don't embed an original this large in the saved archive
+
 export function Step2DropFiles() {
   const { state, patch } = useWizard();
   const { captureFileReports, breadcrumb, capture } = useErrors();
@@ -23,7 +25,12 @@ export function Step2DropFiles() {
       const [{ ingestAsync }, { BINARY_EXTRACTORS }] = await Promise.all([import('../../ingest/ingest'), import('../../ingest/binary')]);
       const files = await Promise.all(arr.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
       const bundle = await ingestAsync(files, BINARY_EXTRACTORS);
-      patch({ bundle, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null }); // re-dropping invalidates downstream
+      // rawFiles keeps the ORIGINAL uploads for the archive's sources/ — bounded so one huge file can't
+      // overflow the archive cap (the file is still analyzed; only its embedding in the archive is skipped).
+      const rawFiles = files.filter((f) => f.bytes.length <= MAX_ARCHIVE_SOURCE_BYTES);
+      if (rawFiles.length < files.length) breadcrumb('warn', `${files.length - rawFiles.length} large file(s) omitted from the saved archive's sources (still analyzed)`);
+      // re-dropping invalidates downstream.
+      patch({ bundle, rawFiles, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null });
       breadcrumb('info', `ingested ${bundle.files.length} file(s), ${bundle.primitives.length} evidence item(s)`);
       // Skipped/unsupported files are recorded and offered as an error report (the good files still flow through).
       captureFileReports(bundle.files);

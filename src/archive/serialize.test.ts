@@ -47,6 +47,11 @@ const state = {
   bundle,
   anonBundle,
   pipeline,
+  caseId: null,
+  rawFiles: [
+    { name: 'sizing.xlsx', bytes: new Uint8Array([80, 75, 3, 4, 42]) }, // pretend xlsx bytes
+    { name: 'deck.pdf', bytes: new Uint8Array([37, 80, 68, 70]) },
+  ],
 } as unknown as WizardState;
 
 const meta = { caseId: 'acme-mutual-k9f2a1', createdAt: '2026-06-07T18:00:00Z', updatedAt: '2026-06-07T18:05:00Z' };
@@ -65,12 +70,18 @@ describe('archive serialize/deserialize', () => {
     expect(manifest.currentVersion).toBe('001');
     expect(manifest.versions).toHaveLength(1);
 
-    // Hydration lands on Refine, key not carried
+    // Hydration lands on Refine, key not carried, caseId bound to this archive
     expect(loaded.step).toBe(6);
     expect(loaded.hasApiKey).toBe(false);
+    expect(loaded.caseId).toBe('acme-mutual-k9f2a1');
+    expect(loaded.caseCreatedAt).toBe('2026-06-07T18:00:00Z'); // preserved from the manifest for re-saves
     expect(loaded.config!.discountPct).toBe(15);
     expect(loaded.map).toEqual(state.map);
     expect(loaded.confirmed).toBe(true);
+
+    // Original uploaded files round-trip (the archive's sources/), names + bytes intact
+    expect(loaded.rawFiles!.map((f) => f.name)).toEqual(['sizing.xlsx', 'deck.pdf']);
+    expect([...loaded.rawFiles![0]!.bytes]).toEqual([80, 75, 3, 4, 42]);
 
     // Image bytes survive the zip exactly — original AND redacted, kept distinct
     const origImg = loaded.bundle!.primitives.find((p) => p.kind === 'image') as ImagePrimitive;

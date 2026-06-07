@@ -9,6 +9,7 @@ import { runPipeline } from '../../orchestrate';
 import { researchTcoCosts, sourcesToClaims } from '../../research/tco';
 import { createLLM } from '../../provider';
 import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from '../pipeline';
+import { serializeCase, newCaseId } from '../../archive/serialize';
 import type { TcoInputs } from '../../engine/types';
 import type { ClaimInput } from '../../render/types';
 import type { BudgetCheckpoint } from '../../orchestrate/budget';
@@ -18,7 +19,7 @@ const usd = (c: number): string => `$${c.toFixed(2)}`;
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
 export function Step5Generate() {
-  const { state, patch, getApiKey } = useWizard();
+  const { state, patch, getApiKey, launcher } = useWizard();
   const { capture, breadcrumb } = useErrors();
   const [tco, setTco] = useState<TcoInputs>(DEFAULT_TCO_INPUTS);
   const [claims, setClaims] = useState<ClaimInput[]>([]);
@@ -26,6 +27,7 @@ export function Step5Generate() {
   const [busy, setBusy] = useState<'idle' | 'research' | 'generate'>('idle');
   const [checkpoints, setCheckpoints] = useState<BudgetCheckpoint[]>([]);
   const [error, setError] = useState('');
+  const [saveWarning, setSaveWarning] = useState('');
 
   const llm = (): ReturnType<typeof createLLM> => createLLM(state.config!.provider, { apiKey: getApiKey() });
 
@@ -50,6 +52,7 @@ export function Step5Generate() {
   async function generate(): Promise<void> {
     setBusy('generate');
     setError('');
+    setSaveWarning('');
     setCheckpoints([]);
     try {
       const cfg = buildRunConfig({
@@ -67,7 +70,24 @@ export function Step5Generate() {
         breadcrumb('warn', `generate produced no docModel: ${out.error ?? 'blocked'}`);
         return;
       }
-      patch({ pipeline: out, tcoInputs: tco }); // persist the cost inputs so Refine can recompute with current settings
+      // Persist the cost inputs (so Refine can recompute) + assign a caseId on first generate; preserve
+      // the original creation time across re-saves.
+      const now = new Date().toISOString();
+      const caseId = state.caseId ?? newCaseId(state.config?.companyName ?? 'case', new Date());
+      const createdAt = state.caseCreatedAt ?? now;
+      patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt });
+      // Save the case archive (best-effort — a save failure must NOT lose the just-generated deliverables,
+      // but it must be VISIBLE so the rep knows the case wasn't persisted and can export manually).
+      try {
+        const zipBytes = await serializeCase({ ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt }, { caseId, createdAt, updatedAt: now });
+        await launcher.saveArchive(caseId, zipBytes);
+        setSaveWarning('');
+        breadcrumb('info', `case archived as ${caseId}`);
+      } catch (e) {
+        setSaveWarning(`Deliverables generated, but this case could not be saved (${(e as Error).message}). You can still export it in Step 7.`);
+        breadcrumb('warn', `could not save the case archive: ${(e as Error).message}`);
+        capture(e, { category: 'launcher_error', title: 'Could not save the case archive', context: { step: 5 }, open: false });
+      }
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'provider_error', title: 'Generation failed', context: { step: 5 } });
@@ -114,6 +134,7 @@ export function Step5Generate() {
       ) : null}
 
       {error ? <p class="cf-error">{error}</p> : null}
+      {saveWarning ? <p class="cf-error">⚠ {saveWarning}</p> : null}
       {out?.docModel ? (
         <p class="cf-ok">✓ {out.rendered.length} deliverable(s) generated — {out.docModel.sufficiency.verdict.tier}. Click Next to refine.</p>
       ) : null}

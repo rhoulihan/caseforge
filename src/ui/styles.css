@@ -704,3 +704,42 @@ body {
   color: var(--cf-slate-2);
   font-size: 0.92rem;
 }
+
+/* Home screen — saved-case list */
+.cf-caselist {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cf-caserow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.cf-caseinfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cf-casename {
+  font-weight: 600;
+  color: var(--cf-slate);
+}
+.cf-casemeta {
+  font-size: 0.82rem;
+  color: var(--cf-slate-2);
+}
+.cf-caseactions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}

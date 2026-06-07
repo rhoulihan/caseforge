@@ -12,6 +12,7 @@ import { WizardProvider, useWizard } from '../WizardContext';
 import { ErrorProvider } from '../ErrorContext';
 import type { TriageResult } from '../../classify/types';
 import type { EvidenceBundle } from '../../ingest/types';
+import type { LauncherClient } from '../../launcher/client';
 
 const anonBundle: EvidenceBundle = { files: [], primitives: [{ kind: 'text', source: 'a', text: 'CF_ORG_01' }] };
 const triage = { profileId: 'mongodb', inventory: [], bindings: [] } as unknown as TriageResult;
@@ -61,5 +62,51 @@ describe('Step5Generate', () => {
     expect(cfg.triage).toBe(triage);
     expect(cfg.bundle).toBe(anonBundle);
     expect(cfg.companyName).toBe('Acme');
+  });
+
+  it('archives the case on a successful generate (save-on-generate, best-effort)', async () => {
+    runPipeline.mockImplementation(async () => ({
+      docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, companyName: 'Acme', discountPct: 0 },
+      rendered: [{ filename: 'business-case-acme.html', html: '<x/>' }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      budgetLog: [],
+      gate: { items: [], blocked: false, reasons: [] },
+    }));
+    const saveArchive = vi.fn(async () => undefined);
+    const launcher = { health: async () => true, saveArchive } as unknown as LauncherClient;
+    render(
+      <ErrorProvider>
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }} launcher={launcher}>
+          <Step5Generate />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    fireEvent.click(screen.getByText(/Generate deliverables/i));
+    await waitFor(() => expect(saveArchive).toHaveBeenCalledTimes(1));
+    const [caseId, bytes] = saveArchive.mock.calls[0]! as unknown as [string, Uint8Array];
+    expect(caseId).toMatch(/^acme-/); // slug(company) + timestamp
+    expect(bytes).toBeInstanceOf(Uint8Array);
+    expect(bytes.length).toBeGreaterThan(0);
+  });
+
+  it('surfaces a visible warning (no silent loss) when the archive save fails', async () => {
+    runPipeline.mockImplementation(async () => ({
+      docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, companyName: 'Acme', discountPct: 0 },
+      rendered: [{ filename: 'business-case-acme.html', html: '<x/>' }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      budgetLog: [],
+      gate: { items: [], blocked: false, reasons: [] },
+    }));
+    const launcher = { health: async () => true, saveArchive: vi.fn(async () => { throw new Error('archive exceeds 200 MiB'); }) } as unknown as LauncherClient;
+    render(
+      <ErrorProvider>
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }} launcher={launcher}>
+          <Step5Generate />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    fireEvent.click(screen.getByText(/Generate deliverables/i));
+    await screen.findByText(/could not be saved/i); // visible, not silent
+    expect(screen.getByText(/1 deliverable\(s\) generated/i)).toBeTruthy(); // deliverables NOT lost
   });
 });
