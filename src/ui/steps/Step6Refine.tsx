@@ -14,7 +14,7 @@ const TABS = ['Business Case', 'Sizing Brief', 'Technical Review', 'Claims Check
 const CHIPS = ['More concise', 'Executive tone', 'Emphasize DR resilience', 'Add risk framing'];
 
 export function Step6Refine() {
-  const { state, patch, getApiKey } = useWizard();
+  const { state, patch, getApiKey, setApiKey } = useWizard();
   const { capture, breadcrumb } = useErrors();
   const [active, setActive] = useState(0);
   const [instr, setInstr] = useState('');
@@ -32,6 +32,8 @@ export function Step6Refine() {
   }
   const docModel = out.docModel;
   const discountPct = state.config?.discountPct ?? 0;
+  // A case opened from an archive has no API key (session-only) — refine needs one; setApiKey flips this.
+  const needsKey = !state.hasApiKey;
 
   async function regenerate(): Promise<void> {
     if (!state.config) return;
@@ -109,7 +111,14 @@ export function Step6Refine() {
           ))}
         </div>
         <textarea aria-label="Refine instruction" class="cf-ta" value={instr} placeholder="e.g. tighten the exec summary, emphasize DR resilience" onInput={(e) => setInstr(e.currentTarget.value)} />
-        <button type="button" class="cf-btn" disabled={busy} onClick={() => void regenerate()}>
+        {needsKey ? (
+          <label class="cf-field">
+            <span class="cf-label">API key</span>
+            <input type="password" aria-label="API key" placeholder="sk-… (needed to refine this case)" onInput={(e) => setApiKey(e.currentTarget.value)} />
+            <span class="cf-hint">This case was opened from an archive — enter your key to regenerate. It stays in this session only.</span>
+          </label>
+        ) : null}
+        <button type="button" class="cf-btn" disabled={busy || needsKey} onClick={() => void regenerate()}>
           {busy ? 'Regenerating…' : 'Regenerate'}
         </button>
         {error ? <p class="cf-error">{error}</p> : null}

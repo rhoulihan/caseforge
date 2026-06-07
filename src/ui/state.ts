@@ -22,11 +22,15 @@ export interface WizardConfig {
 
 export interface WizardState {
   step: WizardStepId;
+  // Archive identity — null for a new (unsaved) case; set on first save / when opened from an archive.
+  caseId: string | null;
+  caseCreatedAt: string | null; // original archive creation time, preserved across re-saves (null = new)
   // 1 · Setup (apiKey held in session memory, not here)
   config: WizardConfig | null;
   hasApiKey: boolean;
   // 2 · Drop files
   bundle: EvidenceBundle | null;
+  rawFiles: { name: string; bytes: Uint8Array }[]; // the original uploaded files (for the archive's sources/)
   // 3 · Anonymize
   detected: DetectedPhrase[];
   map: MapEntry[];
@@ -57,9 +61,12 @@ export const STEPS: { id: WizardStepId; key: string; title: string }[] = [
 export function initialWizardState(): WizardState {
   return {
     step: 1,
+    caseId: null,
+    caseCreatedAt: null,
     config: null,
     hasApiKey: false,
     bundle: null,
+    rawFiles: [],
     detected: [],
     map: [],
     anonBundle: null,

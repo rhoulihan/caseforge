@@ -40,7 +40,13 @@ export function WizardProvider({
   launcher?: LauncherClient;
   initial?: Partial<WizardState>;
 }) {
-  const [state, setState] = useState<WizardState>(() => ({ ...initialWizardState(), ...initial }));
+  // Seed hasApiKey from the live session key: the key is a module global that outlives a remount, so a
+  // New/Open case must reflect whether a usable key already exists (avoids a desync where the Setup field
+  // shows a carried-over key but Next stays disabled, or an opened case locks its stepper at step 1).
+  const [state, setState] = useState<WizardState>(() => {
+    const base = { ...initialWizardState(), ...initial };
+    return { ...base, hasApiKey: base.hasApiKey || getSessionApiKey().trim().length > 0 };
+  });
   const client = useMemo(() => launcher ?? new LauncherClient(), [launcher]);
   const patch = useCallback((p: Partial<WizardState>) => setState((s) => ({ ...s, ...p })), []);
   const goTo = useCallback((step: WizardStepId) => setState((s) => (step <= maxReachableStep(s) ? { ...s, step } : s)), []);

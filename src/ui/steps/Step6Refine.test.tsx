@@ -79,4 +79,19 @@ describe('Step6Refine', () => {
     expect(cfg.discountPct).toBe(15); // current discount applied → numbers recompute, not frozen
     await screen.findByText('BC REGENERATED'); // preview updated from the recompute
   });
+
+  it('a case opened without a session key shows an inline key prompt and gates Regenerate until entered', async () => {
+    render(
+      <ErrorProvider>
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: false, anonBundle, triage, pipeline }}>
+          <Step6Refine />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    const btn = () => screen.getByRole('button', { name: /Regenerate/i }) as HTMLButtonElement;
+    expect(btn().disabled).toBe(true); // no key yet
+    fireEvent.input(screen.getByLabelText('API key'), { target: { value: 'sk-test' } });
+    await waitFor(() => expect(btn().disabled).toBe(false)); // entering the key unblocks refine
+    expect(runPipeline).not.toHaveBeenCalled();
+  });
 });
