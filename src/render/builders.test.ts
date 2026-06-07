@@ -54,6 +54,58 @@ describe('buildTcoSection', () => {
   });
 });
 
+describe('customer discount (via assembleDocModel)', () => {
+  const base = buildTcoSection(NORTHWIND, rates);
+  const opts = {
+    companyName: 'Northwind',
+    targetPlatform: 'Oracle Autonomous Database',
+    preparedDate: '2026-06-05',
+    documentStatus: 'preliminary' as const,
+    sizingInputs: NORTHWIND_SIZING,
+    assumptions: [],
+    rates,
+    tcoInputs: NORTHWIND,
+    sufficiency: NORTHWIND_DOCMODEL.sufficiency,
+    prose: NORTHWIND_DOCMODEL.prose,
+    claims: NORTHWIND_DOCMODEL.claims,
+  };
+
+  it('default (no discount) is a strict golden no-op', () => {
+    const dm = assembleDocModel(opts);
+    expect(dm.discountPct).toBe(0);
+    expect(dm.tco.adbWarmAnnual.central).toBe(213649);
+    expect(dm.tco.savingWarm).toEqual({ amount: 235851, pct: 52 });
+  });
+
+  it('discounts the proposed ADB cost (25%) but never the on-prem baseline', () => {
+    const dm = assembleDocModel({ ...opts, discountPct: 25 });
+    expect(dm.discountPct).toBe(25);
+    expect(dm.tco.adbWarmAnnual.central).toBeCloseTo(base.adbWarmAnnual.central * 0.75, 2);
+    expect(dm.tco.adbColdAnnual.central).toBeCloseTo(base.adbColdAnnual.central * 0.75, 2);
+    expect(dm.tco.onprem.total.central).toBe(base.onprem.total.central); // baseline untouched
+  });
+
+  it('raises the savings % and feeds the discounted figure into the cost chart', () => {
+    const dm = assembleDocModel({ ...opts, discountPct: 25 });
+    expect(dm.tco.savingWarm.pct).toBeGreaterThan(base.savingWarm.pct); // cheaper proposal → bigger saving
+    const warmBar = dm.charts.cost.bars.find((b) => b.lines.join(' ').includes('warm'))!;
+    expect(warmBar.total).toBe(Math.round(dm.tco.adbWarmAnnual.central / 1000)); // chart uses the discounted total
+  });
+
+  it('also discounts the indicative sizing-scenario Oracle costs (consistent across the deliverable set)', () => {
+    const b = assembleDocModel(opts); // 0%
+    const dm = assembleDocModel({ ...opts, discountPct: 25 });
+    expect(dm.sizing.scenarios[0]!.totalAnnual / b.sizing.scenarios[0]!.totalAnnual).toBeCloseTo(0.75, 1); // cost scaled
+    expect(dm.sizing.scenarios[0]!.base).toBe(b.sizing.scenarios[0]!.base); // provisioning (ECPU) unchanged
+  });
+
+  it('carries the list-vs-net display figure only when discounted', () => {
+    expect(assembleDocModel(opts).listAdbAnnual).toBeUndefined(); // 0% → no list figure
+    const dm = assembleDocModel({ ...opts, discountPct: 25 });
+    expect(dm.listAdbAnnual!.warm).toBe(213649); // pre-discount list, from undiscounted inputs
+  });
+});
+
 describe('chart builders', () => {
   const tco = buildTcoSection(NORTHWIND, rates);
   it('builds a 3-bar cost chart whose segments sum to each total and savePct is read from the TCO', () => {

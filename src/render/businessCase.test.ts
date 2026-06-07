@@ -57,4 +57,22 @@ describe('renderBusinessCase', () => {
     expect(noCollisions(s)).toBe(true);
     expect(s.hasNonFinite()).toBe(false);
   });
+
+  it('shows list-vs-your-price + a discount note when a customer discount applies', () => {
+    const dm = structuredClone(NORTHWIND_DOCMODEL);
+    dm.discountPct = 20;
+    dm.listAdbAnnual = { warm: 213649, cold: 107746 };
+    dm.tco.adbWarmAnnual.central = Math.round(213649 * 0.8); // 170919 — the discounted "your price"
+    const html = renderBusinessCase(dm).html;
+    expect(html).toContain('class="list"'); // struck-through list price element
+    expect(html).toContain('$214K'); // list (213649)
+    expect(html).toContain('$171K'); // your price (170919)
+    expect(html).toContain('20% customer discount'); // stat-card sublabel
+    expect(html.toLowerCase()).toContain('customer discount off list'); // footer wording
+  });
+
+  it('shows no discount framing at 0% (default)', () => {
+    expect(out.html).not.toContain('class="list"');
+    expect(out.html).not.toContain('customer discount');
+  });
 });

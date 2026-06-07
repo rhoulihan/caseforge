@@ -41,6 +41,10 @@ export interface RunConfig {
   gateAnswers?: GateAnswer[];
   /** Precomputed triage (e.g. the UI ran it to show the sufficiency/gate) — skips re-running triage here. */
   triage?: TriageResult;
+  /** Customer discount on the proposed solution (0 = none). Applied to the TCO before the math. */
+  discountPct?: number;
+  /** Refinement instruction forwarded to prose generation (wording/emphasis only; figures stay engine-locked). */
+  proseInstruction?: string;
   /** Invoked after each budget checkpoint is recorded, for a live cost ticker. */
   onCheckpoint?: (checkpoint: BudgetCheckpoint) => void;
 }
@@ -120,11 +124,12 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
     assumptions: config.assumptions,
     rates: config.rates,
     tcoInputs: config.tcoInputs,
+    discountPct: config.discountPct,
     sufficiency: applied.sufficiency,
     prose: PLACEHOLDER_PROSE,
     claims: config.claims,
   });
-  const { prose, usage } = await generateProse(numericModel, config.llm, model);
+  const { prose, usage } = await generateProse(numericModel, config.llm, model, config.proseInstruction);
   recordUsage(budget, 'generate', usage);
   fireCheckpoint();
 

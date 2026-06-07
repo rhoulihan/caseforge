@@ -5,6 +5,7 @@
 import type { SizingInputs, TcoInputs, Level, Range } from '../engine/types';
 import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../engine/tco';
+import { applyDiscount, discountFactor } from '../engine/discount';
 import { coldRtoHours } from '../engine/dr';
 import { ENGINE_CONFIG } from '../engine/config';
 import { PALETTE } from '../charts/svg';
@@ -183,11 +184,23 @@ export interface AssembleOptions {
   sufficiency: SufficiencyReport;
   prose: { businessCase: BusinessCaseProse; sizingBrief: SizingBriefProse; technicalReview: TechnicalReviewProse };
   claims: ClaimInput[];
+  discountPct?: number; // customer discount on the proposed solution; default 0 (strict no-op)
 }
 
-/** Assemble a complete DocModel: engine-computed numbers + caller-supplied prose/claims/sufficiency. */
+/** Assemble a complete DocModel: engine-computed numbers + caller-supplied prose/claims/sufficiency.
+ * A customer discount (if any) is applied to the PROPOSED tcoInputs before the TCO math, so every
+ * derived figure (savings, 5-year, payback, charts) reflects the discounted price; the baseline is
+ * untouched. */
 export function assembleDocModel(o: AssembleOptions): DocModel {
-  const tco = buildTcoSection(o.tcoInputs, o.rates);
+  const discountPct = o.discountPct ?? 0;
+  const tco = buildTcoSection(applyDiscount(o.tcoInputs, discountPct), o.rates);
+  // The discount applies to the whole PROPOSED Oracle cost, so the sizing-scenario ECPU/storage costs
+  // (the indicative ADB cost shown in the Sizing Brief) are discounted by the same factor — keeping every
+  // customer-facing Oracle figure consistent. Provisioning (ECPU counts) is unaffected; rates only scale price.
+  const f = discountFactor(discountPct);
+  const scenarioRates = f === 1 ? o.rates : { ...o.rates, ecpuPerHr: o.rates.ecpuPerHr * f, storagePerGbMo: o.rates.storagePerGbMo * f };
+  // When discounted, also carry the pre-discount (list) ADB annual so the renderer can show list-vs-net.
+  const listAdbAnnual = discountPct > 0 ? { warm: adbTotal(o.tcoInputs, 'warm', 'central'), cold: adbTotal(o.tcoInputs, 'cold', 'central') } : undefined;
   const basis: SizingBasis = {
     shards: o.sizingInputs.shards,
     hoVcpu: o.sizingInputs.hoVcpu,
@@ -201,10 +214,12 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     targetPlatform: o.targetPlatform,
     preparedDate: o.preparedDate,
     documentStatus: o.documentStatus,
+    discountPct,
+    listAdbAnnual,
     sizing: {
       basis,
       consumed: consumedEcpu(o.sizingInputs, 'workload'),
-      scenarios: buildSizingScenarios(o.sizingInputs, o.rates),
+      scenarios: buildSizingScenarios(o.sizingInputs, scenarioRates),
       dataCompressedGb: o.rates.dataCompressedGb,
     },
     tco,

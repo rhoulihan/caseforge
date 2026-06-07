@@ -61,11 +61,13 @@ export function Step5Generate() {
         onCheckpoint: (cp) => setCheckpoints((cs) => [...cs, cp]),
       });
       const out = await runPipeline(cfg);
-      patch({ pipeline: out });
-      if (out.error) {
-        setError(out.error);
-        breadcrumb('warn', `pipeline returned a soft error: ${out.error}`);
+      if (!out.docModel) {
+        // Don't replace an existing good result (re-generate) when this run is blocked / produces nothing.
+        setError(out.error ?? (out.gate.blocked ? `Blocked: ${out.gate.reasons.join('; ')}` : 'Generation produced no document.'));
+        breadcrumb('warn', `generate produced no docModel: ${out.error ?? 'blocked'}`);
+        return;
       }
+      patch({ pipeline: out, tcoInputs: tco }); // persist the cost inputs so Refine can recompute with current settings
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'provider_error', title: 'Generation failed', context: { step: 5 } });

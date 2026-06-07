@@ -19,7 +19,7 @@ const triage = {
 function stateWith(over: Partial<WizardState> = {}): WizardState {
   return {
     ...initialWizardState(),
-    config: { provider: 'claude', companyName: 'Northwind Mutual', tokenBudget: 250_000 },
+    config: { provider: 'claude', companyName: 'Northwind Mutual', tokenBudget: 250_000, discountPct: 0 },
     hasApiKey: true,
     bundle: anonBundle,
     anonBundle,
@@ -56,5 +56,18 @@ describe('buildRunConfig', () => {
 
   it('throws if the prerequisites are missing', () => {
     expect(() => buildRunConfig({ state: stateWith({ triage: null }), apiKey: 'sk', tcoInputs: DEFAULT_TCO_INPUTS, claims: [], preparedDate: '2026-06-06' })).toThrow(/classification/);
+  });
+
+  it('forwards the current discount and a refine instruction into the RunConfig', () => {
+    const cfg = buildRunConfig({
+      state: stateWith({ config: { provider: 'claude', companyName: 'Northwind Mutual', tokenBudget: 250_000, discountPct: 20 } }),
+      apiKey: 'sk',
+      tcoInputs: DEFAULT_TCO_INPUTS,
+      claims: [],
+      preparedDate: '2026-06-06',
+      proseInstruction: 'tighten the exec summary',
+    });
+    expect(cfg.discountPct).toBe(20); // current discount → recomputed every regenerate
+    expect(cfg.proseInstruction).toBe('tighten the exec summary');
   });
 });

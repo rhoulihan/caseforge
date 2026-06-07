@@ -24,7 +24,7 @@ function Readout() {
 function setup() {
   return render(
     <ErrorProvider>
-      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }}>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage }}>
         <Step5Generate />
         <Readout />
       </WizardProvider>

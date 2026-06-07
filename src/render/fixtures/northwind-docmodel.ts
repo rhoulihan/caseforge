@@ -123,6 +123,7 @@ export const NORTHWIND_DOCMODEL: DocModel = {
   targetPlatform: 'Oracle Autonomous Database',
   preparedDate: '2026-06-05',
   documentStatus: 'preliminary',
+  discountPct: 0,
   sizing: {
     basis: {
       shards: NORTHWIND_SIZING.shards,

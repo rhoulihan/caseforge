@@ -3,6 +3,7 @@
 // lives in session memory only (set in Setup), so this carries just a `hasApiKey` flag.
 
 import type { EvidenceBundle } from '../ingest/types';
+import type { TcoInputs } from '../engine/types';
 import type { MapEntry } from '../anon/mapping';
 import type { DetectedPhrase } from '../anon/detect';
 import type { TriageResult } from '../classify/types';
@@ -16,6 +17,7 @@ export interface WizardConfig {
   provider: Provider;
   companyName: string;
   tokenBudget: number;
+  discountPct: number; // customer discount on the proposed solution (0–100, default 0)
 }
 
 export interface WizardState {
@@ -36,6 +38,7 @@ export interface WizardState {
   gateAnswers: GateAnswer[];
   confirmed: boolean;
   // 5 · Generate
+  tcoInputs: TcoInputs | null; // the cost inputs used to generate (persisted so Refine can recompute)
   pipeline: PipelineOutput | null;
   // 6 · Refine
   previewReady: boolean;
@@ -65,6 +68,7 @@ export function initialWizardState(): WizardState {
     triage: null,
     gateAnswers: [],
     confirmed: false,
+    tcoInputs: null,
     pipeline: null,
     previewReady: false,
   };

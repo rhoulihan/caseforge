@@ -57,7 +57,7 @@ function Readout() {
 function setup() {
   return render(
     <ErrorProvider>
-      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000 }, hasApiKey: true, bundle }} launcher={mockLauncher}>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle }} launcher={mockLauncher}>
         <Step3Anonymize />
         <Readout />
       </WizardProvider>
@@ -111,7 +111,7 @@ describe('Step3Anonymize — image redaction', () => {
     return render(
       <ErrorProvider>
         <WizardProvider
-          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000 }, hasApiKey: true, bundle: imageBundle }}
+          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }}
           launcher={mockLauncher}
         >
           <Step3Anonymize />
@@ -181,7 +181,7 @@ describe('Step3Anonymize — image failure & multi-image paths', () => {
     return render(
       <ErrorProvider>
         <WizardProvider
-          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000 }, hasApiKey: true, bundle: twoImageBundle }}
+          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: twoImageBundle }}
           launcher={mockLauncher}
         >
           <Step3Anonymize />

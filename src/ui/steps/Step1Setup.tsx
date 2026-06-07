@@ -7,7 +7,7 @@ import type { Provider } from '../state';
 
 export function Step1Setup() {
   const { state, patch, setApiKey, getApiKey } = useWizard();
-  const cfg = state.config ?? { provider: 'claude' as Provider, companyName: '', tokenBudget: 100_000 };
+  const cfg = state.config ?? { provider: 'claude' as Provider, companyName: '', tokenBudget: 100_000, discountPct: 0 };
   const update = (p: Partial<typeof cfg>): void => patch({ config: { ...cfg, ...p } });
   const incomplete = !state.hasApiKey || cfg.companyName.trim().length === 0;
 
@@ -41,6 +41,20 @@ export function Step1Setup() {
       <label class="cf-field">
         <span class="cf-label">Token budget</span>
         <input type="number" aria-label="Token budget" value={cfg.tokenBudget} min={20_000} step={10_000} onInput={(e) => update({ tokenBudget: Number(e.currentTarget.value) || 0 })} />
+      </label>
+
+      <label class="cf-field">
+        <span class="cf-label">Customer discount (%)</span>
+        <input
+          type="number"
+          aria-label="Customer discount percent"
+          value={cfg.discountPct}
+          min={0}
+          max={100}
+          step={1}
+          onInput={(e) => update({ discountPct: Math.max(0, Math.min(100, Number(e.currentTarget.value) || 0)) })}
+        />
+        <span class="cf-hint">Applied to the proposed Oracle solution (ADB + migration + DR); your current spend stays at list. Adjustable later in Refine.</span>
       </label>
 
       {incomplete ? <p class="cf-hint">Enter an API key and a company name to continue.</p> : <p class="cf-ok">Ready — click Next.</p>}

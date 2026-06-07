@@ -66,6 +66,14 @@ describe('generateProse', () => {
     expect(ctx).toContain('52%');
   });
 
+  it('adds a discount note to the context only when a discount applies (so prose calls it "your price", not list)', () => {
+    expect(buildProseContext(m)).not.toMatch(/customer discount/i); // 0% (default fixture) → no note
+    const discounted = { ...m, discountPct: 25, listAdbAnnual: { warm: 213649, cold: 107746 } };
+    const ctx = buildProseContext(discounted);
+    expect(ctx).toMatch(/25% customer discount off list/i);
+    expect(ctx).toMatch(/INCLUSIVE of this discount/i);
+  });
+
   it('requires all 7+4+4 prose fields in the schema', () => {
     const s = PROSE_SCHEMA.schema as {
       properties: { businessCase: { required: string[] }; sizingBrief: { required: string[] }; technicalReview: { required: string[] } };

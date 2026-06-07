@@ -16,6 +16,7 @@ h3{font-size:10pt;margin:0 0 4px;}
 .stat.g{border-top-color:var(--green);}
 .stat .n{font-size:15pt;font-weight:800;color:var(--slate);}
 .stat.g .n{color:var(--green);}
+.stat .n .list{text-decoration:line-through;color:var(--muted);font-weight:600;font-size:11pt;margin-right:4px;}
 .stat .l{font-size:7.6pt;color:var(--muted);margin-top:2px;}
 .fig{text-align:center;margin:10px 0;}
 .fig svg{max-width:100%;height:auto;}
