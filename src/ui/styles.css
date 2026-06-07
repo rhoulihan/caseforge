@@ -596,6 +596,7 @@ body {
   box-shadow: 0 10px 40px rgba(15, 23, 42, 0.25);
   width: 100%;
   max-width: 640px;
+  min-height: min(440px, 80vh);
   max-height: 85vh;
   display: flex;
   flex-direction: column;
@@ -616,7 +617,7 @@ body {
 .cf-modal-body {
   padding: 18px 20px;
   overflow: auto;
-  flex: 1 1 0;
+  flex: 1 1 auto; /* size to content + fill the min-height; shrink + scroll under max-height */
   min-height: 0; /* allow the body to shrink + scroll instead of pushing the footer off-screen */
 }
 .cf-modal-foot {
