@@ -5,11 +5,18 @@
 import { redactImage, type RedactionResult } from './index';
 import { recognizeWords, terminateOcr } from './ocr';
 import { paintRedactions } from './paint';
+import type { OcrWord } from './match';
 import type { MapEntry } from '../anon/mapping';
 
-export { terminateOcr };
+export { terminateOcr, recognizeWords }; // recognizeWords: the detection-time OCR pass (reused at redaction)
 export type { RedactionResult };
 
-export function redactImageInBrowser(img: { bytes: Uint8Array; mime: string }, map: MapEntry[], companyName: string): Promise<RedactionResult> {
-  return redactImage(img, map, companyName, { ocr: recognizeWords, paint: paintRedactions });
+/** Redact an image. Pass `precomputed` (words from the detection OCR pass) to avoid re-OCR. */
+export function redactImageInBrowser(
+  img: { bytes: Uint8Array; mime: string },
+  map: MapEntry[],
+  companyName: string,
+  precomputed?: { words: OcrWord[]; meanConfidence: number },
+): Promise<RedactionResult> {
+  return redactImage(img, map, companyName, { ocr: recognizeWords, paint: paintRedactions }, precomputed);
 }

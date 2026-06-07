@@ -6,11 +6,12 @@
 // /anonymize) before any LLM sees it — no LLM is involved here.
 
 import ExcelJS from 'exceljs';
-import { extractText, getDocumentProxy } from 'unpdf';
+import { extractText, extractImages, getDocumentProxy } from 'unpdf';
 import MsgReader from '@kenjiuno/msgreader';
 import JSZip from 'jszip';
 import PostalMime from 'postal-mime';
 import { ooxmlParagraphsToText, ooxmlSlideText, htmlToText } from './markup';
+import { encodePng } from './png';
 import type { AsyncExtractor, Primitive, DetectedType } from './types';
 
 const MAX_TEXT_CHARS = 2_000_000; // cap a single text primitive (memory guard)
@@ -19,6 +20,13 @@ const MAX_COLS = 1024; // cap columns read per row (ignore cells beyond this)
 const MAX_INFLATED_BYTES = 200 * 1024 * 1024; // reject an xlsx whose zip entries inflate beyond this
 const MAX_ZIP_ENTRIES = 10_000; // reject a zip with absurdly many entries (entry-count bomb)
 const MAX_SLIDES = 2_000; // cap slides/notes processed from one pptx
+const MAX_EMBEDDED_IMAGES = 50; // cap images pulled out of one container (.msg / ooxml / pdf)
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024; // skip an embedded image larger than this
+const MAX_PDF_PAGES_SCANNED = 500; // cap pages we pull embedded images from
+const MAX_PDF_IMAGE_PIXELS = 40_000_000; // skip a pdf image larger than ~40MP (pdf.js refuses it pre-decode)
+const PDF_IMAGE_EXTRACT_MS = 20_000; // per-page deadline so a stuck pdf.js object can't wedge ingest
+const IMAGE_EXT_MIME: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' };
+const OOXML_MEDIA = /^(word|ppt|xl)\/media\/[^/]+\.(png|jpe?g|gif|webp)$/i;
 const STOP = Symbol('stop-iteration');
 
 function toArrayBuffer(b: Uint8Array): ArrayBuffer {
@@ -31,6 +39,47 @@ function toArrayBuffer(b: Uint8Array): ArrayBuffer {
 
 function cap(s: string): string {
   return s.length > MAX_TEXT_CHARS ? s.slice(0, MAX_TEXT_CHARS) : s;
+}
+
+/** Reject after `ms` if `p` hasn't settled. Used to bound a pdf.js call that can hang indefinitely
+ * (its internal object-resolve callback may never fire on a crafted PDF — and that await is otherwise
+ * uncatchable). The losing promise keeps running but can no longer block the pipeline. */
+function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([p, deadline]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
+/** Resolve a concrete image/* mime from a declared mime and/or a filename/extension; null if not an image. */
+function imageMimeFor(nameOrExt: string, declared?: string): string | null {
+  const d = (declared ?? '').toLowerCase();
+  if (d === 'image/jpg') return 'image/jpeg';
+  if (/^image\/(png|jpeg|gif|webp)$/.test(d)) return d;
+  const ext = nameOrExt.toLowerCase().split('.').pop() ?? '';
+  return IMAGE_EXT_MIME[ext] ?? null;
+}
+
+/** Pull embedded raster images out of an OOXML container's media folder ((word|ppt|xl)/media/*),
+ * so PII inside an embedded chart/screenshot is OCR-able downstream. Bounded + per-file crash-isolated. */
+async function ooxmlMediaImages(zip: JSZip, name: string): Promise<Primitive[]> {
+  const paths = Object.keys(zip.files)
+    .filter((p) => OOXML_MEDIA.test(p))
+    .slice(0, MAX_EMBEDDED_IMAGES);
+  const out: Primitive[] = [];
+  for (const p of paths) {
+    try {
+      const bytes = await zip.file(p)!.async('uint8array');
+      const mime = imageMimeFor(p);
+      if (mime && bytes.length > 0 && bytes.length <= MAX_IMAGE_BYTES) {
+        out.push({ kind: 'image', source: `${name}#${p.split('/').pop()}`, mime, bytes });
+      }
+    } catch {
+      /* skip one unreadable media entry */
+    }
+  }
+  return out;
 }
 
 /** "Name <addr>" when both present, else whichever exists — keeps the ADDRESS visible to the local
@@ -131,26 +180,74 @@ export async function xlsxExtractor(name: string, bytes: Uint8Array, opts?: { ma
         rows: allRows.slice(1),
       });
     });
+    out.push(...(await ooxmlMediaImages(await JSZip.loadAsync(toArrayBuffer(bytes)), name))); // embedded images
     return out;
   } catch {
     return []; // encrypted / non-xlsx ooxml / malformed -> reported as not-extracted
   }
 }
 
-/** pdf -> a single TextPrimitive with all page text merged. */
-export const pdfExtractor: AsyncExtractor = async (name, bytes) => {
+/** pdf -> a TextPrimitive with all page text merged, plus an ImagePrimitive per embedded raster image
+ * (charts/screenshots) so PII baked into them is OCR-able downstream. `opts.maxImagePixels` (default
+ * MAX_PDF_IMAGE_PIXELS) bounds image size both for pdf.js decode and our re-encode; tests inject a small
+ * cap. Assignable to AsyncExtractor (the extra param is optional). */
+export async function pdfExtractor(name: string, bytes: Uint8Array, opts?: { maxImagePixels?: number }): Promise<Primitive[]> {
+  const maxPixels = opts?.maxImagePixels ?? MAX_PDF_IMAGE_PIXELS;
   try {
     // disableFontFace: text extraction needs no @font-face rendering. (useSystemFonts stays at the
     // unpdf default of true — local fonts only, no network fetch — so no standardFontDataUrl is needed.)
-    const pdf = await getDocumentProxy(bytes, { disableFontFace: true });
+    // maxImageSize: pdf.js refuses to decode any image larger than this many pixels, so a crafted PDF
+    // declaring a huge image can't OOM the tab BEFORE our post-decode pixel guard would ever run.
+    const pdf = await getDocumentProxy(bytes, { disableFontFace: true, maxImageSize: maxPixels });
     const { text } = await extractText(pdf, { mergePages: true });
     const merged = (Array.isArray(text) ? text.join('\n') : String(text ?? '')).trim();
-    return merged ? [{ kind: 'text', source: name, text: cap(merged) }] : [];
+    const out: Primitive[] = merged ? [{ kind: 'text', source: name, text: cap(merged) }] : [];
+    out.push(...(await pdfEmbeddedImages(pdf, name, maxPixels)));
+    return out;
   } catch {
     return [];
   }
-};
+}
 
+/** Pull embedded raster images out of a PDF: pdf.js decodes each image XObject to raw pixels, which we
+ * re-encode to PNG so the same image is OCR-able + redactable downstream. Bounded + per-page/per-image
+ * crash-isolated. Known gaps: inline images, image masks, and JPXDecode-only images are not surfaced
+ * (pdf.js paints them via ops we don't collect or in channel counts it doesn't expose). */
+async function pdfEmbeddedImages(pdf: Awaited<ReturnType<typeof getDocumentProxy>>, name: string, maxPixels: number): Promise<Primitive[]> {
+  const out: Primitive[] = [];
+  const pages = Math.min(pdf.numPages, MAX_PDF_PAGES_SCANNED);
+  for (let p = 1; p <= pages && out.length < MAX_EMBEDDED_IMAGES; p++) {
+    let imgs: Awaited<ReturnType<typeof extractImages>>;
+    try {
+      imgs = await withTimeout(extractImages(pdf, p), PDF_IMAGE_EXTRACT_MS, 'pdf image extract timeout');
+    } catch {
+      continue; // an unparseable OR stuck page never loses the rest of the document
+    }
+    let k = 0;
+    for (const img of imgs) {
+      if (out.length >= MAX_EMBEDDED_IMAGES) break;
+      k++;
+      try {
+        if (img.width * img.height > maxPixels) continue; // second line after pdf.js's maxImageSize
+        const png = encodePng(img.width, img.height, img.channels, img.data);
+        if (png.length > 0 && png.length <= MAX_IMAGE_BYTES) {
+          out.push({ kind: 'image', source: `${name}#p${p}-img${k}`, mime: 'image/png', bytes: png });
+        }
+      } catch {
+        /* one undecodable image never loses the rest of the page */
+      }
+    }
+  }
+  return out;
+}
+
+interface MsgAttachment {
+  fileName?: string;
+  fileNameShort?: string;
+  extension?: string;
+  attachMimeTag?: string;
+  innerMsgContent?: boolean; // true when the attachment is an embedded .msg (not a file)
+}
 interface MsgData {
   error?: string;
   subject?: string;
@@ -158,12 +255,19 @@ interface MsgData {
   senderName?: string;
   senderEmail?: string;
   recipients?: Array<{ name?: string; email?: string }>;
+  attachments?: MsgAttachment[];
+}
+interface MsgReaderLike {
+  getFileData(): MsgData;
+  getAttachment(a: MsgAttachment | number): { fileName?: string; content?: Uint8Array };
 }
 
-/** ole(.msg) -> body TextPrimitive + subject/from/to KeyValuePrimitive. Non-msg ole (.xls/.doc) -> []. */
+/** ole(.msg) -> body TextPrimitive + subject/from/to KeyValuePrimitive + an ImagePrimitive per embedded/
+ * attached IMAGE (so performance charts pasted into an email are OCR-able downstream). Non-msg ole -> []. */
 export const msgExtractor: AsyncExtractor = async (name, bytes) => {
   try {
-    const data = new MsgReader(toArrayBuffer(bytes)).getFileData() as MsgData;
+    const reader = new MsgReader(toArrayBuffer(bytes)) as unknown as MsgReaderLike;
+    const data = reader.getFileData();
     if (data.error) return [];
     const out: Primitive[] = [];
     const body = (data.body ?? '').trim();
@@ -178,6 +282,26 @@ export const msgExtractor: AsyncExtractor = async (name, bytes) => {
       .join('; ');
     if (to) pairs.to = to;
     if (Object.keys(pairs).length) out.push({ kind: 'keyvalue', source: name, pairs });
+
+    let images = 0;
+    for (const att of data.attachments ?? []) {
+      if (images >= MAX_EMBEDDED_IMAGES) break;
+      if (att.innerMsgContent === true) continue; // embedded email, not an image file
+      const label = att.fileName ?? att.fileNameShort ?? att.extension ?? '';
+      const mime = imageMimeFor(label, att.attachMimeTag);
+      if (!mime) continue;
+      try {
+        const content = reader.getAttachment(att).content;
+        if (content && content.length > 0 && content.length <= MAX_IMAGE_BYTES) {
+          // Prefix the attachment index so two attachments sharing a filename get DISTINCT sources —
+          // downstream keys OCR/redaction by primitive identity, but a unique source keeps it unambiguous.
+          out.push({ kind: 'image', source: `${name}#att${images + 1}-${att.fileName ?? att.fileNameShort ?? 'image'}`, mime, bytes: content });
+          images++;
+        }
+      } catch {
+        /* one bad attachment never loses the rest of the email */
+      }
+    }
     return out;
   } catch {
     return [];
@@ -211,7 +335,9 @@ export const docxExtractor: AsyncExtractor = async (name, bytes) => {
     }
     if (authors) text += `\ncomment authors: ${authors}`;
     text = text.trim();
-    return text ? [{ kind: 'text', source: name, text: cap(text) }] : [];
+    const out: Primitive[] = text ? [{ kind: 'text', source: name, text: cap(text) }] : [];
+    out.push(...(await ooxmlMediaImages(zip, name))); // embedded images (logos/charts) → OCR-able downstream
+    return out;
   } catch {
     return [];
   }
@@ -240,6 +366,7 @@ export const pptxExtractor: AsyncExtractor = async (name, bytes) => {
       const text = ooxmlSlideText(await zip.file(s.path)!.async('string')).trim();
       if (text) out.push({ kind: 'text', source: `${name}#notes${s.n}`, text: cap(text) });
     }
+    out.push(...(await ooxmlMediaImages(zip, name))); // embedded slide images (charts/screenshots)
     return out;
   } catch {
     return [];

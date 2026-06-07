@@ -6,16 +6,21 @@
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
-import { detectCandidates, type DetectedPhrase, type PhraseType } from '../../anon/detect';
+import { detectCandidates, detectCandidatesInImage, mergeDetected, type DetectedPhrase, type PhraseType } from '../../anon/detect';
 import { suggestSlug, type MapEntry } from '../../anon/mapping';
 import type { EvidenceBundle, Primitive } from '../../ingest/types';
+import type { OcrWord } from '../../redaction/match';
 
 interface ImgReview {
-  source: string;
+  id: number; // primitive index within the bundle — the STABLE identity (two images can share a source)
+  source: string; // display label only
   url: string; // object URL of the REDACTED image (preview)
   rectCount: number;
   warning?: string;
 }
+// Keyed by primitive index, NOT source: two images with the same source (e.g. same-named .msg
+// attachments) must never share an OCR-cache entry, or one image's word boxes would redact the other.
+type OcrCache = Record<number, { words: OcrWord[]; meanConfidence: number }>;
 
 const TYPES: PhraseType[] = ['org', 'person', 'host', 'term'];
 
@@ -36,17 +41,21 @@ export function Step3Anonymize() {
   const [newPhrase, setNewPhrase] = useState('');
   const [newType, setNewType] = useState<PhraseType>('term');
   const [scanning, setScanning] = useState(false);
+  const [scanFailures, setScanFailures] = useState(0); // images whose OCR threw during the scan pass
   const [imgReview, setImgReview] = useState<ImgReview[]>([]);
   const [redactedPrims, setRedactedPrims] = useState<Primitive[] | null>(null);
-  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [excluded, setExcluded] = useState<Set<number>>(new Set()); // primitive indices excluded from vision
+  const [ocrCache, setOcrCache] = useState<OcrCache>({}); // OCR words per image index (detection) → reused at redaction
 
   // Detect candidates once per bundle (re-detect when a new bundle is dropped → detected reset to []).
+  // Guard on !imagesScanned: once the rep has scanned images, a fully-cleared list is a deliberate
+  // state — re-running text-only detection here would silently drop the folded-in image-OCR candidates.
   useEffect(() => {
-    if (state.bundle && state.detected.length === 0 && state.map.length === 0) {
+    if (state.bundle && !state.imagesScanned && state.detected.length === 0 && state.map.length === 0) {
       const detected = detectCandidates(state.bundle, state.config?.companyName ?? '');
       patch({ detected, map: mapFor(detected) });
     }
-  }, [state.bundle, state.detected.length, state.map.length, state.config, patch]);
+  }, [state.bundle, state.imagesScanned, state.detected.length, state.map.length, state.config, patch]);
 
   useEffect(() => {
     let alive = true;
@@ -80,49 +89,37 @@ export function Step3Anonymize() {
     setNewPhrase('');
   };
 
-  async function anonymizeAll(): Promise<void> {
-    if (!state.bundle) return;
-    setBusy(true);
-    setError('');
-    try {
-      // Only text primitives reach the LLM; replace their text via the launcher (real text → slugs).
-      const primitives = await Promise.all(
-        state.bundle.primitives.map(async (p) => (p.kind === 'text' ? { ...p, text: (await launcher.anonymize(state.map, p.text)).text } : p)),
-      );
-      const anonBundle: EvidenceBundle = { files: state.bundle.files, primitives };
-      // Fresh anonBundle carries the RAW images again → require a re-scan if any are present.
-      patch({ anonBundle, imagesReviewed: false });
-      setRedactedPrims(null);
-      setImgReview([]);
-      setExcluded(new Set());
-    } catch (e) {
-      setError((e as Error).message);
-      capture(e, { category: 'launcher_error', title: 'Anonymization failed', context: { step: 3 } });
-    } finally {
-      setBusy(false);
-    }
-  }
+  const company = state.config?.companyName ?? '';
 
-  // OCR each image LOCALLY (no AI), black out matched customer text, and let the rep review before use.
-  async function scanImages(): Promise<void> {
-    if (!state.anonBundle || !state.config) return;
+  // Step A — OCR every image LOCALLY (no AI) and FOLD its text into the candidate list the rep approves,
+  // so PII that appears only inside a chart/screenshot becomes a reviewable mapping entry. The OCR words
+  // are cached so the redaction pass below doesn't scan twice.
+  async function scanImagesForText(): Promise<void> {
+    if (!state.bundle) return;
     setScanning(true);
     setError('');
     try {
-      const { redactImageInBrowser } = await import('../../redaction/browser'); // code-split: loads tesseract only now
-      const review: ImgReview[] = [];
-      const prims = await Promise.all(
-        state.anonBundle.primitives.map(async (p) => {
-          if (p.kind !== 'image') return p;
-          const r = await redactImageInBrowser({ bytes: p.bytes, mime: p.mime }, state.map, state.config!.companyName);
-          review.push({ source: p.source, url: URL.createObjectURL(new Blob([new Uint8Array(r.bytes)], { type: r.mime })), rectCount: r.rectCount, warning: r.warning });
-          return { ...p, bytes: r.bytes, mime: r.mime }; // r.mime: non-JPEG is re-encoded to PNG by the redactor
-        }),
-      );
-      setRedactedPrims(prims);
-      setImgReview(review);
-      setExcluded(new Set());
-      patch({ anonBundle: { files: state.anonBundle.files, primitives: prims }, imagesReviewed: true });
+      const { recognizeWords } = await import('../../redaction/browser'); // code-split: loads tesseract only now
+      const cache: OcrCache = {};
+      const imageLists: DetectedPhrase[][] = [];
+      let failures = 0;
+      const prims = state.bundle.primitives;
+      for (let i = 0; i < prims.length; i++) {
+        const p = prims[i]!;
+        if (p.kind !== 'image') continue;
+        try {
+          const { words, meanConfidence } = await recognizeWords(p.bytes, p.mime);
+          cache[i] = { words, meanConfidence }; // keyed by primitive index, never source
+          imageLists.push(detectCandidatesInImage(words.map((w) => w.text).join(' '), p.source, company));
+        } catch {
+          failures++; // one image failing to OCR shouldn't block the rest — it's re-scanned + flagged at redaction
+        }
+      }
+      const merged = mergeDetected(state.detected, ...imageLists);
+      setOcrCache(cache);
+      setScanFailures(failures);
+      // The candidate list changed → any prior anonymize is stale; require re-anonymize.
+      patch({ detected: merged, map: mapFor(merged), anonBundle: null, imagesScanned: true, imagesReviewed: false });
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'unexpected', title: 'Image scan failed', context: { step: 3 } });
@@ -131,21 +128,55 @@ export function Step3Anonymize() {
     }
   }
 
-  // Drop / re-include an image from the vision pass (the rep's lever when a preview looks wrong).
-  function toggleExclude(source: string): void {
-    if (!redactedPrims || !state.anonBundle) return;
-    const next = new Set(excluded);
-    if (next.has(source)) next.delete(source);
-    else next.add(source);
-    setExcluded(next);
-    patch({ anonBundle: { files: state.anonBundle.files, primitives: redactedPrims.filter((p) => p.kind !== 'image' || !next.has(p.source)) }, imagesReviewed: true });
+  // Step B — replace real text with slugs AND black out matched text in images (reusing the cached OCR),
+  // then surface each redacted image for the rep to review.
+  async function anonymizeAll(): Promise<void> {
+    if (!state.bundle) return;
+    setBusy(true);
+    setError('');
+    const review: ImgReview[] = []; // declared out here so the catch can revoke any URLs already created
+    try {
+      const hasImages = state.bundle.primitives.some((p) => p.kind === 'image');
+      const redact = hasImages ? (await import('../../redaction/browser')).redactImageInBrowser : null;
+      const primitives = await Promise.all(
+        state.bundle.primitives.map(async (p, i) => {
+          if (p.kind === 'text') return { ...p, text: (await launcher.anonymize(state.map, p.text)).text };
+          if (p.kind === 'image' && redact) {
+            const r = await redact({ bytes: p.bytes, mime: p.mime }, state.map, company, ocrCache[i]); // reuse THIS image's cached words
+            review.push({ id: i, source: p.source, url: URL.createObjectURL(new Blob([new Uint8Array(r.bytes)], { type: r.mime })), rectCount: r.rectCount, warning: r.warning });
+            return { ...p, bytes: r.bytes, mime: r.mime }; // non-JPEG is re-encoded to PNG by the redactor
+          }
+          return p;
+        }),
+      );
+      review.sort((a, b) => a.id - b.id); // Promise.all resolves out of order; show previews in bundle order
+      const anonBundle: EvidenceBundle = { files: state.bundle.files, primitives };
+      setRedactedPrims(primitives);
+      setImgReview(review);
+      setExcluded(new Set());
+      patch({ anonBundle, imagesReviewed: true });
+    } catch (e) {
+      review.forEach((r) => URL.revokeObjectURL(r.url)); // don't leak previews created before the throw
+      setError((e as Error).message);
+      capture(e, { category: 'launcher_error', title: 'Anonymization failed', context: { step: 3 } });
+    } finally {
+      setBusy(false);
+    }
   }
 
-  // Count from the SCANNED set (redactedPrims) so excluding an image doesn't hide the whole panel
-  // (which would strand the rep with no way to re-include it).
-  const imageCount = redactedPrims
-    ? redactedPrims.filter((p) => p.kind === 'image').length
-    : (state.anonBundle?.primitives.filter((p) => p.kind === 'image').length ?? 0);
+  // Drop / re-include an image from the vision pass (the rep's lever when a preview looks wrong).
+  // Keyed by primitive index so excluding one image can't collapse another that shares its source.
+  function toggleExclude(id: number): void {
+    if (!redactedPrims || !state.anonBundle) return;
+    const next = new Set(excluded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setExcluded(next);
+    patch({ anonBundle: { files: state.anonBundle.files, primitives: redactedPrims.filter((p, i) => p.kind !== 'image' || !next.has(i)) }, imagesReviewed: true });
+  }
+
+  const imageCount = state.bundle?.primitives.filter((p) => p.kind === 'image').length ?? 0;
+  const needsScan = imageCount > 0 && !state.imagesScanned; // images must be OCR'd into the list first
 
   return (
     <section class="cf-card">
@@ -172,6 +203,7 @@ export function Step3Anonymize() {
               <td>{d.phrase}</td>
               <td>
                 <span class={`cf-badge ${d.type}`}>{d.type}</span>
+                {d.source === 'image' ? <span class="cf-badge source"> from {d.imageSource?.split('#').pop()}</span> : null}
               </td>
               <td class="num">{d.occurrences}×</td>
               <td>
@@ -204,35 +236,46 @@ export function Step3Anonymize() {
 
       {error ? <p class="cf-error">{error}</p> : null}
       <div class="cf-anon-actions">
-        <button type="button" class="cf-btn" disabled={busy || state.map.length === 0} onClick={() => void anonymizeAll()}>
+        <button type="button" class="cf-btn" disabled={busy || state.map.length === 0 || needsScan} onClick={() => void anonymizeAll()}>
           {busy ? 'Anonymizing…' : state.anonBundle ? 'Re-anonymize' : 'Anonymize & continue →'}
         </button>
-        {state.anonBundle ? <span class="cf-ok">✓ {state.map.length} phrase(s) replaced — real text will never reach the AI.</span> : null}
+        {needsScan ? <span class="cf-hint">Scan the {imageCount} image(s) below first ↓</span> : null}
+        {state.anonBundle ? <span class="cf-ok">✓ {state.map.length} phrase(s) replaced — real text + matched image text will never reach the AI.</span> : null}
       </div>
 
       {imageCount > 0 ? (
         <div class="cf-imgreview">
           <h3>Images ({imageCount})</h3>
           <p class="cf-sub">
-            Chart/screenshot images are read by the AI's vision model. Scan them locally (OCR — no AI) to black out any customer-identifying
-            text first, then review each before continuing.
+            Chart/screenshot images are read by the AI's vision model. Scan them locally (OCR — no AI): any text found is folded into the list
+            above for your approval, then blacked out of the image before it's used.
           </p>
-          {!state.imagesReviewed ? (
-            <button type="button" class="cf-btn" disabled={scanning} onClick={() => void scanImages()}>
-              {scanning ? 'Scanning images…' : `Scan & redact ${imageCount} image(s)`}
+          {needsScan ? (
+            <button type="button" class="cf-btn" disabled={scanning} onClick={() => void scanImagesForText()}>
+              {scanning ? 'Scanning images…' : `Scan ${imageCount} image(s) for hidden text`}
             </button>
+          ) : imgReview.length === 0 ? (
+            scanFailures > 0 ? (
+              <p class="cf-error">
+                ⚠ {scanFailures} of {imageCount} image(s) could not be read (OCR failed) — they’ll be re-scanned and flagged when you anonymize. The rest were folded into the list above.
+              </p>
+            ) : (
+              <p class="cf-ok">
+                ✓ {imageCount} image(s) scanned — any text in them now appears in the list above. Click “{state.anonBundle ? 'Re-anonymize' : 'Anonymize & continue'}” to black it out + review the results.
+              </p>
+            )
           ) : (
             <>
               <div class="cf-imggrid">
                 {imgReview.map((r) => (
-                  <figure key={r.source} class={`cf-imgcard${excluded.has(r.source) ? ' excluded' : ''}`}>
+                  <figure key={r.id} class={`cf-imgcard${excluded.has(r.id) ? ' excluded' : ''}`}>
                     <img src={r.url} alt={`redacted preview of ${r.source}`} />
                     <figcaption>
                       <span class="cf-muted">{r.source}</span>
                       <span>{r.rectCount > 0 ? `✓ ${r.rectCount} region(s) blacked out` : 'no matching text found'}</span>
                       {r.warning ? <span class="cf-error">⚠ {r.warning}</span> : null}
                       <label>
-                        <input type="checkbox" checked={!excluded.has(r.source)} onChange={() => toggleExclude(r.source)} /> send this image to the AI
+                        <input type="checkbox" checked={!excluded.has(r.id)} onChange={() => toggleExclude(r.id)} /> send this image to the AI
                       </label>
                     </figcaption>
                   </figure>

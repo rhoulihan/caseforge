@@ -29,23 +29,29 @@ export async function redactImage(
   map: MapEntry[],
   companyName: string,
   deps: RedactionDeps,
+  precomputed?: { words: OcrWord[]; meanConfidence: number }, // reuse OCR done earlier (detection) — no re-OCR
 ): Promise<RedactionResult> {
   let words: OcrWord[];
   let conf: number;
-  try {
-    const res = await deps.ocr(img.bytes, img.mime);
-    words = res.words;
-    conf = res.meanConfidence;
-  } catch (e) {
-    // OCR unavailable/failed → send un-redacted but flag it loudly (the rep is the backstop).
-    return {
-      bytes: img.bytes,
-      mime: img.mime,
-      rectCount: 0,
-      meanConfidence: 0,
-      redacted: false,
-      warning: `Could not scan this image (${(e as Error).message}) — it will be sent un-redacted. Review it, or exclude it, before continuing.`,
-    };
+  if (precomputed) {
+    words = precomputed.words;
+    conf = precomputed.meanConfidence;
+  } else {
+    try {
+      const res = await deps.ocr(img.bytes, img.mime);
+      words = res.words;
+      conf = res.meanConfidence;
+    } catch (e) {
+      // OCR unavailable/failed → send un-redacted but flag it loudly (the rep is the backstop).
+      return {
+        bytes: img.bytes,
+        mime: img.mime,
+        rectCount: 0,
+        meanConfidence: 0,
+        redacted: false,
+        warning: `Could not scan this image (${(e as Error).message}) — it will be sent un-redacted. Review it, or exclude it, before continuing.`,
+      };
+    }
   }
 
   const ocrText = words.map((w) => w.text).join(' ');

@@ -23,7 +23,7 @@ export function Step2DropFiles() {
       const [{ ingestAsync }, { BINARY_EXTRACTORS }] = await Promise.all([import('../../ingest/ingest'), import('../../ingest/binary')]);
       const files = await Promise.all(arr.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
       const bundle = await ingestAsync(files, BINARY_EXTRACTORS);
-      patch({ bundle, detected: [], map: [], anonBundle: null, imagesReviewed: false, triage: null, confirmed: false, pipeline: null }); // re-dropping invalidates downstream
+      patch({ bundle, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null }); // re-dropping invalidates downstream
       breadcrumb('info', `ingested ${bundle.files.length} file(s), ${bundle.primitives.length} evidence item(s)`);
       // Skipped/unsupported files are recorded and offered as an error report (the good files still flow through).
       captureFileReports(bundle.files);

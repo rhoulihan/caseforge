@@ -30,6 +30,12 @@ describe('stepValidity', () => {
     expect(stepValidity(withSetup({ bundle, anonBundle: bundle }))[4]).toBe(false);
     expect(stepValidity(withSetup({ bundle, anonBundle: bundle, confirmed: true }))[4]).toBe(true);
   });
+  it('image gate fails closed: an anonBundle with an image is not advance-valid until imagesReviewed', () => {
+    const withImage: EvidenceBundle = { files: [], primitives: [{ kind: 'image', source: 'c.png', mime: 'image/png', bytes: new Uint8Array([1]) }] };
+    expect(stepValidity(withSetup({ bundle, anonBundle: withImage, imagesReviewed: false }))[3]).toBe(false); // images present, not reviewed → blocked
+    expect(stepValidity(withSetup({ bundle, anonBundle: withImage, imagesReviewed: true }))[3]).toBe(true); // reviewed → unblocked
+    expect(stepValidity(withSetup({ bundle, anonBundle: bundle, imagesReviewed: false }))[3]).toBe(true); // text-only anonBundle needs no image review
+  });
 });
 
 describe('maxReachableStep', () => {
