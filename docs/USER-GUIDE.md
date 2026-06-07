@@ -4,6 +4,8 @@
 
 You don't need to be technical to use CaseForge. This guide walks you through it start to finish. If you can drag files into a window and click "Next," you can do this.
 
+> *Updated 2026-06-07 — reflects the current design through v0.4.0: the two-step Scan-images-then-Anonymize flow in Step 3, the broadened set of file types, and the in-app Help, About, and error-report dialog.*
+
 ---
 
 ## In one minute
@@ -13,7 +15,7 @@ You don't need to be technical to use CaseForge. This guide walks you through it
 3. Walk the in-app wizard: **Setup → Drop files → Anonymize → Confirm → Generate → Refine → Export.**
 4. Download three polished documents to share.
 
-**Your customer's files never leave your laptop, and real names are scrambled before anything is sent to the AI.** More on that in [Is this safe?](#is-this-safe).
+**Your customer's files never leave your laptop, and real names are scrambled before anything is sent to the AI** — including text found inside chart and screenshot images. More on that in [Is this safe?](#is-this-safe).
 
 ---
 
@@ -21,7 +23,24 @@ You don't need to be technical to use CaseForge. This guide walks you through it
 
 - **A Windows, Mac, or Linux laptop.** Nothing to install — CaseForge is a single download.
 - **An API key** from Claude (Anthropic) or OpenAI. This is how CaseForge uses the AI, billed to *your* account. Getting one takes a few minutes the first time.
-- **The customer's files** — whatever they sent: spreadsheets (`.xlsx`), Word (`.docx`), PowerPoint (`.pptx`), PDFs, emails (`.msg`/`.eml`), web/markup (`.html`/`.xml`/`.rtf`), CSVs, and screenshots (`.png`/`.jpg`/`.webp`). CaseForge figures out what's useful and ignores the rest. (Legacy `.xls`/`.doc` aren't read — re-save as `.xlsx`/`.docx` or PDF.)
+- **The customer's files** — whatever they sent. CaseForge reads a broad set of formats (full list below), figures out what's useful, and ignores the rest.
+
+### Files CaseForge can read
+
+| Kind | Formats |
+| --- | --- |
+| Spreadsheets | `.xlsx` |
+| Word documents | `.docx` |
+| PowerPoint | `.pptx` |
+| PDFs | `.pdf` |
+| Email | `.msg`, `.eml` |
+| Web / markup | `.html`, `.xml`, `.rtf` |
+| Text data | `.csv`, `.tsv`, `.json`, `.txt`, `.md` |
+| Chart / screenshot images | `.png`, `.jpg`, `.gif`, `.webp` |
+
+CaseForge also pulls images *out of* your documents — charts pasted into a `.docx`/`.pptx`/`.xlsx`, image attachments on a `.msg` email, and pictures embedded in a PDF — so anything hidden in them gets reviewed too (see Step 3).
+
+> Legacy `.xls` and `.doc` aren't read. Re-save them as `.xlsx` / `.docx`, or export to PDF, and drop those in instead.
 
 ---
 
@@ -73,6 +92,15 @@ Because CaseForge isn't from an app store, your computer warns you the first tim
 
 **To stop CaseForge:** close the browser tab, then close the small black window (click its **✕**).
 
+### The header: About and Help (any time)
+
+Two buttons sit in the top-right of every screen:
+
+- **About** — a short account of where CaseForge came from and how the numbers are computed, with a link to the full **Sizing methodology & sources** doc. It also shows the version you're running.
+- **?** (Help and FAQ) — a quick-answer panel covering the questions reps ask most (which file types, which key, trying the demo, offline behavior, what to do when a file is skipped or a verdict is BLOCKED). It ends with the support email.
+
+You can open either at any step without losing your place.
+
 ---
 
 # The wizard, step by step
@@ -88,18 +116,32 @@ The seven steps run down the left side. Move forward with **Next →** (it light
 
 ## Step 2 · Drop files
 - **Drag the customer's files** into the drop area (or click **Choose files**). Drop several at once.
-- CaseForge reads them **right on your laptop** — nothing is sent anywhere yet. You'll see a count like *"3 files · 7 evidence items extracted"* and a list, each marked ✓ (read successfully) or ⚠ (couldn't read — skipped, that's fine). An "evidence item" is one useful piece of data CaseForge pulled out.
-- If it shows *0 evidence items*, your files couldn't be read — try a different format (e.g. `.xlsx` instead of `.xls`, or paste details into a `.txt`/`.csv`).
+- CaseForge reads them **right on your laptop** — nothing is sent anywhere yet. You'll see a count like *"3 file(s) · 7 evidence item(s) extracted"* and a list, each marked ✓ (read successfully) or ⚠ (couldn't read — skipped, that's fine). An "evidence item" is one useful piece of data CaseForge pulled out — a spreadsheet, a chunk of text, an email's fields, or an image lifted from inside a document.
+- If a file couldn't be read, CaseForge classifies *why* (unsupported format, a malformed file, an extractor problem, or too large) and offers to send a short report so support can add or fix it — see [Reporting a problem](#reporting-a-problem). The good files still flow through.
+- If it shows *0 evidence items*, none of your files could be read — try a different format (e.g. `.xlsx` instead of `.xls`, or paste details into a `.txt`/`.csv`).
 - Click **Next →**.
 
 ## Step 3 · Anonymize — *the privacy step*
-- CaseForge scans the files **locally (no AI)** for sensitive things — company names, people, emails, server names, IP addresses — and lists each with a placeholder code (a "slug" like `CF_ORG_01`).
-- **Everything in this list will be hidden from the AI.** Review it:
-  - A false alarm (not actually sensitive)? Click the **✕** to remove it.
-  - Something it missed? Type it in **"Add a phrase the detector missed…"**, choose a **type** (person, company, host…) from the dropdown, and click **Add**.
-- Click **Anonymize & continue →**. CaseForge swaps the real text for the codes and confirms *"… phrase(s) replaced — real text will never reach the AI."* Click **Next →**.
 
-> This is the heart of CaseForge: the AI only ever sees the coded version. Real names come back automatically in your final documents.
+This is the heart of CaseForge: the AI only ever sees a coded version of the content, and the real names come back automatically in your final documents. When you have images, this step runs in **two parts** — scan the images, then anonymize everything.
+
+**The detected-phrases list.** CaseForge scans the files **locally (no AI)** for sensitive things — company names, people, hosts/servers, and other terms — and lists each with a placeholder code (a "slug" like `CF_ORG_01`). Everything in this list will be hidden from the AI.
+- A false alarm (not actually sensitive)? Click the **✕** to remove it.
+- Something it missed? Type it in **"Add a phrase the detector missed…"**, choose a **type** (org, person, host, term) from the dropdown, and click **Add**.
+
+**Part 1 — Scan images for hidden text (only when you dropped or extracted images).** If any of your evidence is an image — a dropped screenshot, or a chart pulled out of a document/email/PDF — an **Images** panel appears with a **"Scan N image(s) for hidden text"** button. Click it. CaseForge runs **OCR locally (no AI, fully offline)** on every image and folds any text it finds *into the list above* for your approval. Phrases that came from an image are badged **"from &lt;image&gt;"** so you can see where each one originated. This scan is **required before you can anonymize** — the **Anonymize** button stays disabled, with a hint pointing you to the images, until you've run it. (If an image can't be read, CaseForge tells you honestly and continues with the rest; that image is re-checked and flagged when you anonymize.)
+
+**Part 2 — Anonymize & continue.** Click **Anonymize & continue →**. CaseForge:
+- swaps the real text for the codes in every text item, and
+- **blacks out** the matching text inside each image (reusing what the scan already read — no second scan), then re-encodes the picture.
+
+It confirms *"… phrase(s) replaced — real text + matched image text will never reach the AI."*
+
+**Review the redacted images.** Each image now shows as a preview with black boxes over the matched text and a note like *"✓ 2 region(s) blacked out"* (or *"no matching text found"*). Look at each one. A checkbox — **"send this image to the AI"** — lets you **drop any image** from the AI step if the redaction doesn't look right or you'd rather not send it at all. CaseForge **won't let you move past this step until you've reviewed the images**, so a picture with un-redacted text can't slip through.
+
+When the list and the image previews look right, click **Next →**.
+
+> The OCR/redaction is best-effort. If CaseForge isn't fully confident on an image, it stays usable but is flagged for you — which is exactly why every redacted preview is shown for your eyes before anything leaves the laptop.
 
 ## Step 4 · Confirm — *what we know, and what's missing*
 CaseForge classifies the (anonymized) evidence and shows a **verdict**:
@@ -127,7 +169,7 @@ You can generate from a *Directional* estimate — the documents will say so cle
 - Click **Next →** when you're happy.
 
 ## Step 7 · Export
-- Download what you need: **each document on its own** (e.g. `business-case.html`, `sizing-brief.html`, `technical-review.html`, `claims-checklist.html`), **All deliverables (one HTML)** for a single shareable file, or the underlying **Data (JSON)**.
+- Download what you need: **each document on its own** (the filename carries the customer's name — e.g. `business-case-northwind.html`, `sizing-brief-northwind.html`, `technical-review-northwind.html`, `claims-checklist-northwind.html`), **All deliverables (one HTML)** (`caseforge-deliverables.html`) for a single shareable file, or the underlying **Data (JSON)** (`caseforge-docmodel.json`).
 - The documents already contain the real names. You're done. 🎉
 
 ---
@@ -139,16 +181,30 @@ Yes — privacy is the whole point of the design.
 - **Customer files stay on your laptop.** They're read inside your own browser; the files themselves are never uploaded.
 - **Real names are scrambled before any AI call.** The detection in Step 3 runs locally (no AI). Only the *coded* version of the text is ever sent to Claude/OpenAI.
 - **The AI sees codes, not identities.** It writes prose and looks up prices using stand-ins like `CF_ORG_01`; your final documents put the real names back automatically, on your laptop.
+- **Images are handled too.** CaseForge OCRs every chart/screenshot **locally (offline, no AI)**, folds any text it finds into the same review list, and **blacks it out of the picture** before the image is sent to the AI's vision model. You review every redacted image, and can drop any one you don't want sent.
 - **Zero-retention.** CaseForge uses the providers' no-training, no-retention settings.
 - **Your API key never touches a disk.** It lives only in the browser for the current session.
 
-*One honest caveat — images.* If a **screenshot or chart** has a visible name in it (e.g. in a title), the AI's vision can read it — pictures can't be auto-scrambled the way text is. If an image contains a customer name/email/server, either blur it out first, or type those details into a `.txt`/`.csv` instead of dropping the picture in.
+*One honest caveat — images.* The image OCR/redaction is **best-effort**. Most baked-in text gets caught and blacked out, but unusual fonts, low-resolution charts, or rotated text can defeat OCR — that's why CaseForge shows you every redacted preview and lets you exclude an image from the AI step. If you spot a name, email, or server still visible in a preview, **untick "send this image to the AI"** for it (and, if the detail matters, type it into a `.txt`/`.csv` instead).
 
 ---
 
 ## What will it cost?
 
-CaseForge itself is free; it uses **your** Claude/OpenAI account, so you pay the provider directly. A typical run is a small number of AI calls — usually a few cents to a couple of dollars, depending on the provider and how much you refine. The **cost ticker** in Step 5 shows the running total live, and the **Token budget** in Step 1 caps it.
+CaseForge itself is free; it uses **your** Claude/OpenAI account, so you pay the provider directly. A typical run is a small number of AI calls — usually a few cents to a couple of dollars, depending on the provider and how much you refine. The **cost ticker** in Step 5 shows the running total live, and the **Token budget** in Step 1 caps it. (Image scanning and redaction run on your laptop and cost nothing.)
+
+---
+
+## Reporting a problem
+
+When a file can't be read, or CaseForge hits an unexpected error, a **"Send an error report"** dialog opens on its own. It lists what went wrong (each issue with a plain-language category), and you can expand **"Review the full report before sending"** to read the exact text first — nothing leaves your machine until you choose to send it. Your API key is scrubbed from the report.
+
+- **Send report to Rick** opens a pre-filled email (to `rick.houlihan@oracle.com`) in Outlook on the web and **downloads the report as a file** — just **attach the downloaded file** to the email and send. (Browsers can't attach it for you.)
+- **use my default mail app instead** does the same but via your computer's default mail program (a `mailto:` link), as a fallback.
+- **Download report only** saves the file without opening any email.
+- **Continue without reporting** dismisses it — the working files still flow through.
+
+You can also reach support any time at `rick.houlihan@oracle.com`.
 
 ---
 
@@ -162,7 +218,11 @@ CaseForge itself is free; it uses **your** Claude/OpenAI account, so you pay the
 
 **A message about the port being in use (`cannot bind 127.0.0.1:8080`).** CaseForge is probably already running in another window, or another app is using that address. Close the other window and start again.
 
-**A file shows ⚠ in Step 2.** CaseForge couldn't read that one. It's skipped; the rest still work. Paste the key details into a `.txt` or `.csv` instead.
+**A file shows ⚠ in Step 2.** CaseForge couldn't read that one. It's skipped; the rest still work, and you'll be offered an error report so it can be fixed. Paste the key details into a `.txt` or `.csv` instead.
+
+**The "Anonymize & continue" button is greyed out in Step 3.** If you have images, you must run **"Scan N image(s) for hidden text"** first — the button enables once the scan is done. (If you have no images and the button is still off, there's nothing to anonymize yet.)
+
+**A few images couldn't be scanned.** CaseForge says so plainly and continues with the rest. Those images are re-checked and flagged when you anonymize; review their previews, and untick "send this image to the AI" for any whose text isn't fully blacked out.
 
 **The verdict is BLOCKED (Step 4).** A required detail wasn't found. The screen lists exactly what to ask the customer for — add it there, or drop in a file that has it, then continue.
 
@@ -176,12 +236,16 @@ CaseForge itself is free; it uses **your** Claude/OpenAI account, so you pay the
 
 **Which key — Claude or OpenAI?** Either works. Use whichever account has credit.
 
-**Can I try it without a real customer?** Yes — your download includes a **`samples/northwind-demo`** folder of fictional artifacts. Drop those three files into Step 2 to see the whole flow.
+**Which file formats can I drop in?** Spreadsheets (`.xlsx`), Word (`.docx`), PowerPoint (`.pptx`), PDFs (`.pdf`), email (`.msg`, `.eml`), web/markup (`.html`, `.xml`, `.rtf`), text data (`.csv`, `.tsv`, `.json`, `.txt`, `.md`), and chart images (`.png`, `.jpg`, `.gif`, `.webp`). Legacy `.xls`/`.doc` aren't read — re-save as `.xlsx`/`.docx` or export to PDF.
 
-**Does it work offline?** The app runs offline, but the AI steps (Step 4 classify, Step 5 research/generate) need internet to reach your provider.
+**What happens to images?** They're OCR'd on your laptop, any text is folded into the Step 3 review list, and matched text is blacked out before the image is sent to the AI. You review every redacted image and can exclude any one.
 
-**What databases does it support today?** Sizing **MongoDB → Oracle Autonomous Database**. More source databases are planned.
+**Can I try it without a real customer?** Yes — your download includes a **`samples/northwind-demo`** folder of fictional artifacts. Drop those files into Step 2 to see the whole flow.
+
+**Does it work offline?** The app — including file parsing, anonymization, and image scanning/redaction — runs offline. Only the AI steps (Step 4 classify, Step 5 research/generate) need internet to reach your provider.
+
+**What databases does it support today?** Sizing **MongoDB → Oracle Autonomous Database**. (It can also analyze a MongoDB Atlas source profile — see `docs/ATLAS-SOURCE-PROFILE.md`.) More source databases are planned.
 
 ---
 
-*Need help? Contact your CaseForge champion, or file an issue on the project's GitHub page.*
+*Need help? Use the **?** Help button in the app, email `rick.houlihan@oracle.com`, or file an issue on the project's GitHub page.*

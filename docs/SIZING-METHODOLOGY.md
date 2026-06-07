@@ -5,24 +5,26 @@ five-year business case. **Every number below is computed deterministically in c
 AI is used only to research current list prices, read chart images, and write prose — it never produces an
 authoritative figure.
 
-> This document explains the model and its inputs. The numeric constants it relies on (the headroom
-> divisor, autoscale multipliers, DR restore rate, and ADB list rates) are centralized in one adjustable
-> configuration — `src/engine/config.ts` — so they can be updated in a single place when Oracle pricing or
-> guidance changes. See §7 for the full table.
+> _Updated 2026-06-07._ The numeric constants this model relies on (the headroom divisor, autoscale
+> multipliers, DR restore rate, the consumed-vCPU→ECPU ratio, and ADB list rates) are centralized in one
+> adjustable configuration — **`src/engine/config.ts`** (`ENGINE_CONFIG`) — so they can be updated in a
+> single place when Oracle pricing or guidance changes. Each engine function defaults to these values but
+> accepts an override argument, so tests (and the MongoDB Atlas source profile) can vary a single knob
+> without forking the math. See §7 for the full table.
 
 ## 1. Sizing (compute)
 
 CaseForge sizes **provisioned ECPU** for ADB from the customer's measured MongoDB topology and utilization.
 
-**Consumed ECPU** (≈ consumed vCPU, treated 1:1) for a role is:
+**Consumed ECPU** for a role is consumed vCPU scaled by the configured `ecpuPerVcpu` ratio (Phase-1 = 1:1):
 
 ```
-consumed = shards × vCPU_per_node × utilization%
+consumed = shards × vCPU_per_node × utilization% × ecpuPerVcpu
 ```
 
-evaluated at both **average** and **peak** utilization. For a full **deployment** scope, the primary,
-home-region secondary, and DR roles are summed; for a **workload** scope, only the primary role is counted.
-(`consumedEcpu`, `src/engine/sizing.ts`.)
+evaluated at both **average** and **peak** utilization. For the **`fullcluster`** scope, the primary,
+home-region secondary, and DR roles are summed; for the **`workload`** scope, only the primary role is
+counted. (`consumedEcpu`, `src/engine/sizing.ts`.)
 
 **Provisioned base** applies a headroom rule — provision for a fraction of peak, but never below average so
 the database isn't continuously bursting:
@@ -31,8 +33,9 @@ the database isn't continuously bursting:
 base = ceil( max( Peak / n , Average ) )
 ```
 
-where `n` is the peak-headroom divisor. **Autoscale ceilings** are set at **2×** and **3×** the base, the
-band ADB auto-scaling is allowed to use. (`baseFor`, `ceilings`.)
+where `n` is the peak-headroom divisor (`conservativeDivisor` = 2, or `aggressiveDivisor` = 3).
+**Autoscale ceilings** are set at the configured multipliers — **2×** and **3×** the base — the band ADB
+auto-scaling is allowed to use. (`baseFor`, `ceilings`.)
 
 ## 2. TCO (cost)
 
@@ -40,7 +43,7 @@ band ADB auto-scaling is allowed to use. (`baseFor`, `ceilings`.)
 `high`):
 
 ```
-onprem = license + hardware + storage + facility + labor + backup
+onprem = sum( onpremComponents[level] )      // license + hardware + storage + facility + labor + backup + …
 ```
 
 **ADB annual cost** is the primary subscription plus the added cost of the chosen DR posture:
@@ -56,8 +59,8 @@ adb = adbPrimary + { cold: coldDrAdd, warm: warmDrAdd, none: 0 }
 
 Two cost streams are compared over five years:
 
-- **A — Migrate:** Year 1 = on-prem renewal + ADB primary prove-out + one-time migration services;
-  Years 2–5 = steady-state ADB with the chosen DR posture.
+- **A — Migrate:** Year 1 = on-prem renewal + ADB primary prove-out + one-time migration services
+  (`onprem + adbPrimary + migrationPs`); Years 2–5 = steady-state ADB with the chosen DR posture.
 - **B — Status quo:** on-prem cost every year.
 
 From these:
@@ -68,7 +71,8 @@ From these:
 
 ## 4. Disaster recovery
 
-- **Cold (backup-based) RTO** = `ceil( 1 + dataTB / 5 )` hours — a one-hour base plus one hour per 5 TB.
+- **Cold (backup-based) RTO** = `ceil( coldRtoBaseHours + dataTB × coldRtoHoursPerTb )` hours — by default a
+  one-hour base plus one hour per 5 TB (`0.2 h/TB`).
 - **Warm** DR carries a standby and so adds the `warmDrAdd` cost but a much lower RTO.
   (`coldRtoHours`, `src/engine/dr.ts`.)
 
@@ -89,12 +93,17 @@ presented as authoritative without the rep confirming it.
 ## 6. Data sources
 
 - **Customer workload telemetry** — topology (shards, vCPU per node, DR cores) and utilization
-  (average / peak / P95), parsed locally from the artifacts the customer provides.
+  (average / peak / P95), parsed locally from the artifacts the customer provides. Only the rep-approved,
+  anonymized content ever reaches the AI.
 - **Oracle ADB list pricing** — ECPU and storage rates used for the ADB cost lines. These are researched
-  at run time (and confirmed by the rep) or supplied as defaults.
+  at run time (and confirmed by the rep) or supplied as the `ENGINE_CONFIG.adb` defaults.
 - **On-prem TCO inputs** — license / hardware / storage / facility / labor / backup. The values shipped in
   the golden fixtures are **illustrative figures for a fictional reference customer**, used only to pin the
   deterministic tests — not a real customer.
+- **MongoDB Atlas source profile** — when the source is Atlas, the same topology and cost signals are
+  re-sourced from an Atlas-exported profile (a tier→vCPU lookup supplies cores; the invoice monthly total is
+  the authoritative current cost). See [`ATLAS-SOURCE-PROFILE.md`](./ATLAS-SOURCE-PROFILE.md) and the
+  runnable `samples/atlas-demo` fixture.
 
 ## 7. Tunable constants — `src/engine/config.ts`
 
@@ -102,8 +111,8 @@ The knobs most likely to change as Oracle pricing and guidance evolve are centra
 documented configuration object — **[`src/engine/config.ts`](../src/engine/config.ts)** (`ENGINE_CONFIG`).
 Edit them there (one place) when an update arrives from the Oracle team, refresh the golden tests in the
 same change (a deliberate, reviewable record of the pricing/guidance update), and rebuild. The engine
-functions default to these values but accept an override argument, so tests — and the forthcoming Atlas
-source profile — can vary a single knob without forking the math.
+functions default to these values but accept an override argument, so tests — and the Atlas source profile —
+can vary a single knob without forking the math.
 
 | Constant (`ENGINE_CONFIG.*`) | Role | Default | Source |
 |---|---|---|---|
@@ -117,9 +126,14 @@ source profile — can vary a single knob without forking the math.
 | `dr.coldRtoBaseHours` | cold-DR restore base | **1 h** | Oracle backup-restore rule of thumb |
 | `dr.coldRtoHoursPerTb` | cold-DR restore per-TB | **0.2 h/TB** (= 1 h / 5 TB) | Oracle backup-restore rule of thumb |
 
+A drift-guard unit test (`src/engine/config.test.ts`) pins these documented defaults and confirms each
+engine function both reads the config and honors an override, so an unintended change to a rate fails CI
+rather than slipping out silently.
+
 The five-year stream composition (Year-1 prove-out + one-time migration; Years 2–5 steady-state ADB) is
 structural and lives in `src/engine/tco.ts` (§3), not in the constant table. The on-prem TCO component
 estimates (license/hardware/facility/labor/…) are *customer-specific* — researched or rep-supplied at run
-time — and are deliberately **not** in this config (they are not Oracle formula constants). The MongoDB
-**Atlas** source profile will add an Atlas tier→vCPU lookup table to this same config — see
-[`ATLAS-SOURCE-PROFILE.md`](./ATLAS-SOURCE-PROFILE.md) §4.
+time — and are deliberately **not** in this config (they are not Oracle formula constants). The proposed
+MongoDB **Atlas** source profile *would* add an Atlas tier→vCPU lookup table (M10–M300) to this same
+adjustable config — that work is analyzed but **not yet implemented** (`src/engine/config.ts` currently
+holds only `{adb, sizing, dr}`); see [`ATLAS-SOURCE-PROFILE.md`](./ATLAS-SOURCE-PROFILE.md) §4.
