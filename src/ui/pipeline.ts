@@ -63,6 +63,7 @@ export interface BuildConfigArgs {
   tcoInputs: TcoInputs;
   claims: ClaimInput[];
   preparedDate: string; // ISO yyyy-mm-dd
+  proseInstruction?: string; // set on a Refine regenerate (wording/emphasis only)
   onCheckpoint?: (cp: BudgetCheckpoint) => void;
 }
 
@@ -87,6 +88,8 @@ export function buildRunConfig(a: BuildConfigArgs): RunConfig {
     budgetLimit: { tokens: state.config.tokenBudget },
     triage: state.triage, // reuse the Step-4 triage — no second classify pass
     gateAnswers: state.gateAnswers,
+    discountPct: state.config.discountPct, // current customer discount → recomputed every regenerate
+    proseInstruction: a.proseInstruction,
     onCheckpoint: a.onCheckpoint,
   };
 }

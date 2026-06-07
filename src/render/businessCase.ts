@@ -12,12 +12,19 @@ export function renderBusinessCase(m: DocModel): RenderedDoc {
   const warm = t.dr.find((d) => d.posture === 'warm')!;
   const cold = t.dr.find((d) => d.posture === 'cold')!;
 
+  // When a customer discount applies, show the proposed ADB cost as "list → your price (N% off)".
+  const discounted = m.discountPct > 0 && !!m.listAdbAnnual;
+  const adbWarmLabel = discounted
+    ? `<span class="list">${fmtUsd(m.listAdbAnnual!.warm)}</span> ${fmtUsd(t.adbWarmAnnual.central)}`
+    : fmtUsd(t.adbWarmAnnual.central);
+  const adbWarmSub = discounted ? `Oracle ADB + warm DR / yr<br>(${fmtPct(m.discountPct)} customer discount)` : 'Oracle ADB + warm DR / yr';
+
   const body = `
 ${buildHeader({ companyName: m.companyName, preparedDate: m.preparedDate, documentStatus: m.documentStatus, title: `Halve ${m.companyName}'s Database TCO` })}
 <p class="lead">${escapeProse(p.execSummary)}</p>
 <div class="stats">
   <div class="stat"><div class="n">${fmtUsd(t.onprem.total.central)}</div><div class="l">On-prem MongoDB<br>fully-loaded / yr</div></div>
-  <div class="stat g"><div class="n">${fmtUsd(t.adbWarmAnnual.central)}</div><div class="l">Oracle ADB + warm DR / yr</div></div>
+  <div class="stat g"><div class="n">${adbWarmLabel}</div><div class="l">${adbWarmSub}</div></div>
   <div class="stat g"><div class="n">${fmtPct(t.savingWarm.pct)}</div><div class="l">Lower annual cost<br>(~${fmtUsd(t.savingWarm.amount)}/yr)</div></div>
   <div class="stat g"><div class="n">~Yr ${t.fiveYear.paybackYearWarm ?? '—'}</div><div class="l">Payback after<br>cutover</div></div>
 </div>
@@ -48,7 +55,7 @@ ${buildHeader({ companyName: m.companyName, preparedDate: m.preparedDate, docume
 <div class="pull">${escapeProse(p.pullQuote)}</div>
 <h2>Recommendation &amp; Next Steps</h2>
 <p>${escapeProse(p.nextSteps)}</p>
-${buildFooter('Preliminary for discussion. Figures USD list / pre-discount, sourced from verified multi-source research and prior ADB sizing.')}
+${buildFooter(discounted ? `Preliminary for discussion. Oracle figures reflect a ${fmtPct(m.discountPct)} customer discount off list; your current spend is shown at list. Sourced from verified multi-source research and prior ADB sizing.` : 'Preliminary for discussion. Figures USD list / pre-discount, sourced from verified multi-source research and prior ADB sizing.')}
 `;
   return { filename: `business-case-${slug(m.companyName)}.html`, html: page(`${m.companyName} — Business Case`, body) };
 }

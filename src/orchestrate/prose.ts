@@ -63,6 +63,11 @@ export function buildProseContext(d: Omit<DocModel, 'prose' | 'claims'>): string
     `- On-disk (compressed) data: ${(d.sizing.dataCompressedGb / 1000).toFixed(1)} TB.`,
     '',
     'AUTHORITATIVE FIGURES (already computed — reference these, do not invent others):',
+    ...(d.discountPct > 0
+      ? [
+          `- NOTE: the Oracle figures already include a ${d.discountPct}% customer discount off list${d.listAdbAnnual ? ` (ADB + warm DR list ${k(d.listAdbAnnual.warm)}/yr → your price ${k(t.adbWarmAnnual.central)}/yr)` : ''}; the on-prem baseline is undiscounted. Present the savings as INCLUSIVE of this discount — never call the discounted price "list" or "standard" pricing.`,
+        ]
+      : []),
     `- On-prem fully-loaded: ${k(t.onprem.total.central)}/yr.`,
     `- Oracle ADB + warm DR: ${k(t.adbWarmAnnual.central)}/yr (${t.savingWarm.pct}% lower).`,
     `- Oracle ADB + cold DR: ${k(t.adbColdAnnual.central)}/yr.`,

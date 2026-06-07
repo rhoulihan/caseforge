@@ -5,7 +5,7 @@ import type { EvidenceBundle } from '../ingest/types';
 const bundle: EvidenceBundle = { files: [], primitives: [{ kind: 'text', source: 'a', text: 'hi' }] };
 
 function withSetup(over: Partial<WizardState> = {}): WizardState {
-  return { ...initialWizardState(), config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, ...over };
+  return { ...initialWizardState(), config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, ...over };
 }
 
 describe('stepValidity', () => {
@@ -18,7 +18,7 @@ describe('stepValidity', () => {
   it('setup becomes valid only with config + apiKey + non-empty company', () => {
     expect(stepValidity(withSetup())[1]).toBe(true);
     expect(stepValidity(withSetup({ hasApiKey: false }))[1]).toBe(false);
-    expect(stepValidity(withSetup({ config: { provider: 'claude', companyName: '  ', tokenBudget: 1 } }))[1]).toBe(false);
+    expect(stepValidity(withSetup({ config: { provider: 'claude', companyName: '  ', tokenBudget: 1, discountPct: 0 } }))[1]).toBe(false);
   });
   it('files valid only after setup + a non-empty bundle', () => {
     expect(stepValidity(withSetup({ bundle }))[2]).toBe(true);

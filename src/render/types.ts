@@ -113,6 +113,8 @@ export interface DocModel {
   targetPlatform: string;
   preparedDate: string; // ISO 8601
   documentStatus: 'preliminary' | 'draft' | 'final';
+  discountPct: number; // customer discount applied to the proposed solution (0 = none); drives list-vs-net rendering
+  listAdbAnnual?: { warm: number; cold: number }; // pre-discount ADB annual (central) — set only when discountPct > 0
   sizing: SizingSection;
   tco: TcoSection;
   charts: { cost: CostChartData; fiveYear: FiveYearChartData };

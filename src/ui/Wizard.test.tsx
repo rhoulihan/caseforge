@@ -14,7 +14,7 @@ function Harness() {
         data-testid="satisfy-setup"
         onClick={() => {
           w.setApiKey('sk-test');
-          w.patch({ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 } });
+          w.patch({ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 } });
         }}
       >
         satisfy

@@ -33,7 +33,7 @@ function Readout() {
 function setup(anonBundle: EvidenceBundle) {
   return render(
     <ErrorProvider>
-      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000 }, hasApiKey: true, anonBundle }}>
+      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, anonBundle }}>
         <Step4Confirm />
         <Readout />
       </WizardProvider>

@@ -13,6 +13,7 @@ function Readout() {
       <span data-testid="hasKey">{String(state.hasApiKey)}</span>
       <span data-testid="keyInState">{String('apiKey' in (state as unknown as Record<string, unknown>))}</span>
       <span data-testid="sessionKey">{getApiKey()}</span>
+      <span data-testid="discount">{String(state.config?.discountPct)}</span>
     </div>
   );
 }
@@ -52,5 +53,15 @@ describe('Step1Setup', () => {
     fireEvent.click(screen.getByLabelText('OpenAI'));
     // provider saved into config (radio reflects it)
     expect((screen.getByLabelText('OpenAI') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('captures the customer discount (clamped to 0–100), default 0', () => {
+    setup();
+    fireEvent.input(screen.getByLabelText('Company name'), { target: { value: 'Acme' } }); // materialize config
+    expect(screen.getByTestId('discount').textContent).toBe('0'); // default
+    fireEvent.input(screen.getByLabelText('Customer discount percent'), { target: { value: '15' } });
+    expect(screen.getByTestId('discount').textContent).toBe('15');
+    fireEvent.input(screen.getByLabelText('Customer discount percent'), { target: { value: '250' } });
+    expect(screen.getByTestId('discount').textContent).toBe('100'); // clamped
   });
 });
