@@ -7,14 +7,55 @@ import {
   orderedForward,
   expandEntries,
   buildMap,
+  extendMap,
   type MapEntry,
 } from './mapping';
+import type { DetectedPhrase } from './detect';
 
 describe('suggestSlug', () => {
   it('builds opaque, stable, zero-padded slugs by category', () => {
     expect(suggestSlug('org', 1)).toBe('CF_ORG_01');
     expect(suggestSlug('person', 12)).toBe('CF_PERSON_12');
     expect(suggestSlug('host', 3)).toBe('CF_HOST_03');
+  });
+});
+
+describe('extendMap (add-files: preserve existing slugs, append new without renumbering)', () => {
+  const ph = (phrase: string, type: DetectedPhrase['type'], occurrences = 1): DetectedPhrase => ({ phrase, type, occurrences, confidence: 1 });
+
+  it('with empty existing, behaves exactly like a fresh per-type numbering', () => {
+    const detected = [ph('Acme Mutual', 'org'), ph('Jane Okafor', 'person'), ph('db.prod.local', 'host')];
+    expect(extendMap([], detected)).toEqual([
+      { phrase: 'Acme Mutual', slug: 'CF_ORG_01' },
+      { phrase: 'Jane Okafor', slug: 'CF_PERSON_01' },
+      { phrase: 'db.prod.local', slug: 'CF_HOST_01' },
+    ]);
+  });
+
+  it('keeps existing slugs even when the merged sort order changes, and continues each type counter', () => {
+    const existingMap: MapEntry[] = [
+      { phrase: 'Acme Mutual', slug: 'CF_ORG_01' },
+      { phrase: 'Jane Okafor', slug: 'CF_PERSON_01' },
+    ];
+    // New files bumped Jane to the front (more occurrences) and added two new phrases.
+    const merged = [ph('Jane Okafor', 'person', 9), ph('Acme Mutual', 'org', 2), ph('Globex Re', 'org'), ph('Pat Lee', 'person')];
+    const out = extendMap(existingMap, merged);
+    const slugOf = (p: string) => out.find((m) => m.phrase === p)!.slug;
+    expect(slugOf('Acme Mutual')).toBe('CF_ORG_01'); // unchanged despite reordering
+    expect(slugOf('Jane Okafor')).toBe('CF_PERSON_01'); // unchanged
+    expect(slugOf('Globex Re')).toBe('CF_ORG_02'); // new org continues after 01
+    expect(slugOf('Pat Lee')).toBe('CF_PERSON_02'); // new person continues after 01
+  });
+
+  it('does NOT reuse a slug freed by a removed phrase (seeds from the max index, not the count)', () => {
+    // Rep detected 2 orgs (CF_ORG_01, CF_ORG_02), then removed the first → a gap in the numbering.
+    const afterRemoval: MapEntry[] = [{ phrase: 'Globex Re', slug: 'CF_ORG_02' }];
+    // Add-files brings a 3rd org; it must NOT collapse onto CF_ORG_02 (the surviving phrase's slug).
+    const out = extendMap(afterRemoval, [ph('Globex Re', 'org'), ph('Initech', 'org')]);
+    const slugs = out.map((m) => m.slug);
+    expect(new Set(slugs).size).toBe(slugs.length); // all distinct — no duplicate slug
+    expect(out.find((m) => m.phrase === 'Globex Re')!.slug).toBe('CF_ORG_02'); // survivor unchanged
+    expect(out.find((m) => m.phrase === 'Initech')!.slug).toBe('CF_ORG_03'); // continues past the max, skips the gap
   });
 });
 

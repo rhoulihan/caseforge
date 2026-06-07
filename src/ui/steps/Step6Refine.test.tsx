@@ -24,7 +24,7 @@ const { runPipeline } = vi.hoisted(() => ({
 vi.mock('../../orchestrate', () => ({ runPipeline }));
 
 import { Step6Refine } from './Step6Refine';
-import { WizardProvider } from '../WizardContext';
+import { WizardProvider, useWizard } from '../WizardContext';
 import { ErrorProvider } from '../ErrorContext';
 import type { DocModel } from '../../render/types';
 import type { PipelineOutput } from '../../orchestrate';
@@ -117,6 +117,25 @@ describe('Step6Refine', () => {
     fireEvent.click(screen.getByText('Regenerate'));
     await screen.findByText(/not in the anonymization list/i);
     expect(runPipeline).not.toHaveBeenCalled(); // never sent to the LLM
+  });
+
+  it('"Add more files" carries the note + flag and returns to Step 2', async () => {
+    function Probe() {
+      const { state } = useWizard();
+      return <span data-testid="probe">{`${state.step}|${state.addFilesMode}|${state.pendingRefinement ?? ''}`}</span>;
+    }
+    render(
+      <ErrorProvider>
+        <WizardProvider launcher={mockLauncher} initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, anonBundle, triage, pipeline, caseId: 'acme-1', map, versions: [v1], refinementHistory: [] }}>
+          <Step6Refine />
+          <Probe />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    fireEvent.input(screen.getByLabelText('Refine instruction'), { target: { value: 'tighten it' } });
+    fireEvent.click(screen.getByText('+ Add more files'));
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('2|true|tighten it')); // → Step 2, flag + note set
+    expect(runPipeline).not.toHaveBeenCalled();
   });
 
   it('a case opened without a session key shows an inline key prompt and gates Regenerate until entered', async () => {

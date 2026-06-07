@@ -24,16 +24,42 @@ export function Step2DropFiles() {
       // initial bundle (Vite code-splits this dynamic import into its own chunk).
       const [{ ingestAsync }, { BINARY_EXTRACTORS }] = await Promise.all([import('../../ingest/ingest'), import('../../ingest/binary')]);
       const files = await Promise.all(arr.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) })));
-      const bundle = await ingestAsync(files, BINARY_EXTRACTORS);
+      const fresh = await ingestAsync(files, BINARY_EXTRACTORS);
       // rawFiles keeps the ORIGINAL uploads for the archive's sources/ — bounded so one huge file can't
       // overflow the archive cap (the file is still analyzed; only its embedding in the archive is skipped).
-      const rawFiles = files.filter((f) => f.bytes.length <= MAX_ARCHIVE_SOURCE_BYTES);
-      if (rawFiles.length < files.length) breadcrumb('warn', `${files.length - rawFiles.length} large file(s) omitted from the saved archive's sources (still analyzed)`);
-      // re-dropping invalidates downstream.
-      patch({ bundle, rawFiles, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null });
-      breadcrumb('info', `ingested ${bundle.files.length} file(s), ${bundle.primitives.length} evidence item(s)`);
+      const newRaw = files.filter((f) => f.bytes.length <= MAX_ARCHIVE_SOURCE_BYTES);
+      if (newRaw.length < files.length) breadcrumb('warn', `${files.length - newRaw.length} large file(s) omitted from the saved archive's sources (still analyzed)`);
+
+      if (state.addFilesMode && state.bundle) {
+        // ADD-FILES: append to the existing case. Detect over ONLY the new primitives and EXTEND the
+        // approved map (existing slugs preserved); re-anonymize over the full bundle (fail-closed — a new
+        // phrase may also occur in old content). Keep map/detected/versions/history; invalidate downstream.
+        const { detectCandidates, mergeDetected } = await import('../../anon/detect');
+        const { extendMap } = await import('../../anon/mapping');
+        const merged = mergeDetected(state.detected, detectCandidates(fresh, state.config?.companyName ?? ''));
+        const bundle = { files: [...state.bundle.files, ...fresh.files], primitives: [...state.bundle.primitives, ...fresh.primitives] };
+        patch({
+          bundle,
+          rawFiles: [...state.rawFiles, ...newRaw],
+          detected: merged,
+          map: extendMap(state.map, merged),
+          anonBundle: null, // re-anonymize the full combined bundle with the extended map
+          imagesScanned: false,
+          imagesReviewed: false,
+          triage: null,
+          confirmed: false,
+          pipeline: null,
+        });
+        breadcrumb('info', `added ${fresh.files.length} file(s) to the case (${fresh.primitives.length} new item(s))`);
+        captureFileReports(fresh.files);
+        return;
+      }
+
+      // New case (or re-drop): full reset.
+      patch({ bundle: fresh, rawFiles: newRaw, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null });
+      breadcrumb('info', `ingested ${fresh.files.length} file(s), ${fresh.primitives.length} evidence item(s)`);
       // Skipped/unsupported files are recorded and offered as an error report (the good files still flow through).
-      captureFileReports(bundle.files);
+      captureFileReports(fresh.files);
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'unexpected', title: 'Could not read files', context: { step: 2 } });

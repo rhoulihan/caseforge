@@ -67,6 +67,9 @@ export interface WizardState {
   versions: ArchiveVersion[]; // every generate/refine appends one; the last is the current (= pipeline)
   refinementHistory: RefinementEntry[];
   previewReady: boolean;
+  // Transient add-files navigation (NOT serialized): set when returning Step 6 → Step 2 to add files.
+  addFilesMode?: boolean;
+  pendingRefinement?: string; // the instruction the rep had typed in Step 6, applied at the add-files generate
 }
 
 export const STEPS: { id: WizardStepId; key: string; title: string }[] = [
