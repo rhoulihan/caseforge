@@ -1,5 +1,11 @@
 # Supporting a MongoDB Atlas customer — engine analysis
 
+> **Updated 2026-06-07.** Re-verified against the code through the v0.4.0-pending tree. The proposed
+> Atlas source profile is **still not implemented** — CaseForge today ships only the self-managed
+> MongoDB profile (`src/profile/mongodb.ts`). This remains a design spec plus a runnable demo fixture
+> ([`samples/atlas-demo/`](../samples/atlas-demo/)); every concrete claim below was checked against the
+> current source.
+
 **Question:** what does the CaseForge engine need in order to size and build a business case for a
 customer already on **MongoDB Atlas** (managed cloud), rather than self-managed/on-prem MongoDB?
 
@@ -20,7 +26,7 @@ A worked sample customer lives in [`samples/atlas-demo/`](../samples/atlas-demo/
 | Sizing | `consumedEcpu`, `baseFor`, `ceilings` (`src/engine/sizing.ts`); `SizingInputs` | Inputs are `shards × vCPU × utilization%` per role. Atlas supplies all three (tier→vCPU, metrics→util). |
 | TCO target side | `adbTotal`, `annualSaving`, `fiveYear`, `net5`, `paybackYear` (`src/engine/tco.ts`) | Operate on `Range`s; indifferent to how the current-cost number was produced. |
 | DR | `coldRtoHours` (`src/engine/dr.ts`) | Pure formula on data size. |
-| Profile contract | `SourceProfile`, `SignalSpec`, `DerivationMethod` (`src/profile/types.ts`) | Already profile-agnostic — `table-lookup` is even documented as "e.g. Atlas tier → vCPU". |
+| Profile contract | `SourceProfile`, `SignalSpec`, `DerivationMethod` (`src/profile/types.ts`) | Already profile-agnostic — `table-lookup` is even documented as "e.g. Atlas tier -> vCPU". |
 | Orchestration | `runPipeline` (`src/orchestrate/index.ts`), `triage`, `toSizingInputs` | Already parameterized by a `SourceProfile`; nothing hardcodes MongoDB. |
 | The 6 required sizing signals | `cluster.shardCount`, `node.hoVcpu`, `node.drVcpu`, `util.{primary,hoSec,dr}` | Same signals — just re-sourced from Atlas artifacts. |
 
@@ -49,7 +55,7 @@ Everything below assumes the current cost is a **synthesized on-prem build-up**:
    the 0.75 research cap. (On-prem keeps the research path.) This is a new, simpler `currentCost`
    derivation, not a change to the research engine.
 3. **Atlas signal schema** (`src/profile/atlas.ts`): the 6 required sizing signals are unchanged but
-   re-sourced — `node.hoVcpu`/`drVcpu` come from a **tier→vCPU lookup table** (M10–M200; see §4) keyed on
+   re-sourced — `node.hoVcpu`/`drVcpu` come from a **tier→vCPU lookup table** (M10–M300; see §4) keyed on
    `instanceSize` in the cluster description; `cluster.shardCount` from `numShards`; `util.*` from the
    metrics export. New `tcoCritical` signals describe the bill: per-role node counts, provisioned storage
    GB, backup GB, add-ons, support tier, and the **invoice monthly total** (the authoritative current cost).
@@ -65,7 +71,8 @@ sees "MongoDB Atlas subscription $348K/yr" as the baseline instead of an on-prem
 ## 4. Atlas tier → vCPU/RAM lookup (AWS, illustrative)
 
 The one new constant table. Captured here; in implementation it becomes part of the adjustable config
-(see [`SIZING-METHODOLOGY.md`](./SIZING-METHODOLOGY.md) §7).
+(see [`SIZING-METHODOLOGY.md`](./SIZING-METHODOLOGY.md) §7), the same `src/engine/config.ts` seam that now
+centralizes the ADB sizing + cost constants.
 
 | Tier | vCPU | RAM (GB) | Tier | vCPU | RAM (GB) |
 |---|---|---|---|---|---|
@@ -79,13 +86,40 @@ The one new constant table. Captured here; in implementation it becomes part of 
 
 ## 5. Worked example (the `atlas-demo` fixture)
 
-3-shard M50 cluster (8 vCPU/node), home + cross-region warm DR, ~1.8 TB, **$348K/yr Atlas**:
-- **Sizing** (reused, unchanged): `shards=3`, `hoVcpu=8`, `drVcpu=8`, util primary ≈ 38%/70% avg/peak →
-  the existing Peak÷N model produces the ADB ECPU provisioning + autoscale band.
+The fixture is **Meridian Freight Systems** (fictional). Its four artifacts map one-to-one onto the
+engine's needs:
+
+| Artifact | What it is | Role |
+|---|---|---|
+| `cluster-describe.json` | Atlas Admin API v2 *describe cluster* output (`GET /api/atlas/v2/groups/{groupId}/clusters/{name}` shape) | **Topology** → `numShards`, `instanceSize` (M50 → 8 vCPU), per-region node counts, disk |
+| `atlas-invoice.csv` | Itemized monthly Atlas invoice (sums to ~$29,000/mo ≈ $348K/yr, net of the commitment-discount credit) | **Current cost** — parsed directly (the Atlas equivalent of the on-prem TCO build-up) |
+| `cpu-utilization.csv` | CPU utilization time series (System / Secondary / DR columns) | **Sizing** → `util.primary` / `util.hoSec` / `util.dr` (avg + peak) |
+| `customer-email.txt` | Context email from the customer (Priya Nair) | Narrative + anonymization-detection exercise |
+
+3-shard M50 cluster (8 vCPU/node), home `us-east-1` (3 electable/shard) + cross-region warm DR in
+`us-west-2` (2 electable/shard), ~1.8 TB logical (2,500 GB provisioned disk/node), **~$348K/yr Atlas**:
+
+- **Sizing** (reused, unchanged): `shards=3`, `hoVcpu=8`, `drVcpu=8`, util primary ≈ 48%/70% avg/peak
+  (System CPU column; Secondary ≈ 38%/55%, DR ≈ 25%/35%) → the existing Peak÷N model produces the ADB
+  ECPU provisioning + autoscale band.
 - **Current cost** (new path): the invoice rolls up to `currentCost.compute/storage/backup/dataTransfer/
-  addOns/support` summing to ~$348K/yr — used verbatim as the status-quo baseline.
+  addOns/support` (the M50 instance hours, gp3 storage, PITR + snapshot backup, cross-region transfer,
+  Atlas Search add-on, Enterprise support, less the annual-commitment credit) summing to ~$348K/yr — used
+  verbatim as the status-quo baseline.
 - **Everything downstream** (ADB cost, 5-year A/B, payback, DR/RTO, the three deliverables) is the
   existing engine.
+
+The customer email is explicit that the **Atlas bill** is the CFO's number ("base the savings case on
+that, not on a hypothetical self-managed build-out"), which is exactly why the Atlas current-cost path is
+invoice-parse, not research.
+
+> The same fixture also exercises CaseForge's **anonymization** flow. Real-looking names (Meridian Freight
+> Systems, Priya Nair), project/cluster IDs (`meridian-prod`), and regions are candidate phrases the rep
+> approves into the fail-closed map before any AI call. As of the v0.4.0-pending work, ingest also
+> **extracts embedded raster images** and OCRs them for hidden text in Step 3 — so were a topology/CPU
+> screenshot dropped in alongside these text artifacts, any baked-in PII would be detected and blacked out
+> before the image reached the LLM's vision model. The Atlas demo today ships only text/CSV/JSON, so no
+> image scan is triggered, but the profile inherits that protection for free.
 
 ## 6. Scope & open decisions
 
@@ -93,9 +127,12 @@ The one new constant table. Captured here; in implementation it becomes part of 
   the smallest change and keeps `currentTotal` a one-liner; a discriminated `OnpremTcoInputs | AtlasTcoInputs`
   is more type-explicit but touches more call sites. *Recommendation: generic `Record` rename.*
 - **Invoice parsing**: a deterministic mapper from invoice SKU categories → the 6 Atlas cost keys (the SKUs
-  in `atlas-invoice.csv` are the contract). Lives behind the Atlas profile.
-- **Overlap with the config-extraction task**: the ADB list rates, the Peak÷N divisor, the autoscale
-  multipliers, **and** this Atlas tier→vCPU table all become entries in the same adjustable config — so the
-  Atlas profile and the config-extraction work are best done together (the cost model is the shared seam).
+  in `atlas-invoice.csv` — e.g. `ATLAS_INSTANCE_M50_AWS`, `ATLAS_DATA_STORAGE_AWS`, `ATLAS_BACKUP_*`,
+  `ATLAS_DATA_TRANSFER_CROSS_REGION`, `ATLAS_SEARCH`, `ATLAS_SUPPORT_ENTERPRISE`, `ATLAS_COMMITMENT_DISCOUNT`
+  — are the contract). Lives behind the Atlas profile.
+- **Overlap with the config-extraction work** (now shipped as `src/engine/config.ts`): the ADB list rates,
+  the Peak÷N divisor, and the autoscale multipliers already live in that adjustable config. This Atlas
+  tier→vCPU table is the natural next entry — the cost model is the shared seam, so the Atlas profile slots
+  onto config that already exists.
 - Golden coverage: a new Atlas golden fixture (Meridian) mirroring the Northwind goldens, asserting the
   reused sizing + the parsed current cost flow through to the same payback logic.
