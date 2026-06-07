@@ -68,4 +68,28 @@ describe('redactImage', () => {
     expect(r.redacted).toBe(true);
     expect(r.mime).toBe('image/png'); // webp re-encoded to png by paint
   });
+
+  it('reuses precomputed OCR words and never calls deps.ocr (detection-pass reuse, no double scan)', async () => {
+    const d = deps([], 0); // if ocr were called it would yield no words → no redaction
+    const r = await redactImage({ bytes: bytes(100), mime: 'image/png' }, map, 'Acme Corp', d, {
+      words: [word('Acme', 0), word('Corp', 50)],
+      meanConfidence: 91,
+    });
+    expect(d.ocr).not.toHaveBeenCalled(); // the whole point: no second OCR pass
+    expect(r.rectCount).toBeGreaterThan(0); // rects derive from the PRECOMPUTED words
+    expect(r.redacted).toBe(true);
+    expect(r.meanConfidence).toBe(91); // confidence carried from precomputed
+    expect(r.warning).toBeUndefined();
+    expect(d.paint).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors low precomputed confidence (warns) without re-OCR', async () => {
+    const d = deps([], 0);
+    const r = await redactImage({ bytes: bytes(100), mime: 'image/png' }, map, 'Acme Corp', d, {
+      words: [word('Acme', 0)],
+      meanConfidence: LOW_CONFIDENCE - 5,
+    });
+    expect(d.ocr).not.toHaveBeenCalled();
+    expect(r.warning).toMatch(/low text-recognition confidence/i);
+  });
 });

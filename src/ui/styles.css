@@ -341,6 +341,11 @@ body {
   background: #f0fdfa;
   color: #0f766e;
 }
+.cf-badge.source {
+  background: #f1f5f9;
+  color: var(--cf-slate-2);
+  font-style: italic;
+}
 .cf-slug {
   background: #f1f5f9;
   border-radius: 5px;

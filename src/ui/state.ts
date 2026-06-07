@@ -29,6 +29,7 @@ export interface WizardState {
   detected: DetectedPhrase[];
   map: MapEntry[];
   anonBundle: EvidenceBundle | null; // bundle with text primitives replaced by slugs (what triage/LLM sees)
+  imagesScanned: boolean; // images OCR'd + their text folded into the candidate list (or none present)
   imagesReviewed: boolean; // images OCR-redacted + reviewed by the rep (or none present)
   // 4 · Confirm
   triage: TriageResult | null;
@@ -59,6 +60,7 @@ export function initialWizardState(): WizardState {
     detected: [],
     map: [],
     anonBundle: null,
+    imagesScanned: false,
     imagesReviewed: false,
     triage: null,
     gateAnswers: [],

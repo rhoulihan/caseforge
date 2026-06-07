@@ -4,8 +4,9 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import * as CFB from 'cfb';
 import JSZip from 'jszip';
 import { xlsxExtractor, pdfExtractor, msgExtractor, docxExtractor, pptxExtractor, emlExtractor, BINARY_EXTRACTORS } from './binary';
+import { encodePng } from './png';
 import { ingestAsync, MAX_PARSE_BYTES } from './ingest';
-import type { AsyncExtractor, TablePrimitive, TextPrimitive, KeyValuePrimitive } from './types';
+import type { AsyncExtractor, TablePrimitive, TextPrimitive, KeyValuePrimitive, ImagePrimitive } from './types';
 
 // ---- OOXML fixture generators (real zips, no committed binaries) ----
 async function makeDocx(paras: string[]): Promise<Uint8Array> {
@@ -43,6 +44,16 @@ async function makePdf(text: string): Promise<Uint8Array> {
   const page = doc.addPage();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   page.drawText(text, { x: 50, y: 700, size: 18, font });
+  return doc.save();
+}
+
+async function makePdfWithImage(text: string, png: Uint8Array): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText(text, { x: 50, y: 700, size: 18, font });
+  const img = await doc.embedPng(png);
+  page.drawImage(img, { x: 50, y: 400, width: img.width, height: img.height });
   return doc.save();
 }
 
@@ -109,6 +120,24 @@ describe('pdfExtractor', () => {
   });
   it('returns [] for corrupt pdf bytes', async () => {
     await expect(pdfExtractor('bad.pdf', new Uint8Array([0x25, 0x50, 0x44, 0x46, 0, 1, 2, 3, 4, 5]))).resolves.toEqual([]);
+  });
+  it('extracts embedded raster images as OCR-able PNG primitives (pdf.js → PNG round-trip)', async () => {
+    // A real PDF carrying a real embedded image: pdf.js must decode it and we must re-encode to PNG.
+    const embedded = encodePng(8, 8, 3, Uint8ClampedArray.from({ length: 8 * 8 * 3 }, (_, i) => (i * 5) & 0xff));
+    const prims = await pdfExtractor('deck.pdf', await makePdfWithImage('Quarterly results', embedded));
+    expect(prims.some((p) => p.kind === 'text')).toBe(true); // page text still extracted
+    const img = prims.find((p) => p.kind === 'image') as ImagePrimitive | undefined;
+    expect(img).toBeDefined();
+    expect(img!.mime).toBe('image/png');
+    expect(img!.source).toBe('deck.pdf#p1-img1');
+    expect([...img!.bytes.subarray(0, 8)]).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]); // PNG signature
+    expect(img!.bytes.length).toBeGreaterThan(50);
+  });
+  it('drops a pdf image that exceeds the pixel cap (text still extracted)', async () => {
+    const embedded = encodePng(8, 8, 3, Uint8ClampedArray.from({ length: 8 * 8 * 3 }, (_, i) => (i * 5) & 0xff));
+    const prims = await pdfExtractor('deck.pdf', await makePdfWithImage('Quarterly results', embedded), { maxImagePixels: 10 });
+    expect(prims.some((p) => p.kind === 'image')).toBe(false); // 64px image > 10px cap → not emitted
+    expect(prims.some((p) => p.kind === 'text')).toBe(true);
   });
 });
 
@@ -206,15 +235,54 @@ describe('docxExtractor', () => {
     z.file('xl/workbook.xml', '<x/>');
     expect(await docxExtractor('x', await z.generateAsync({ type: 'uint8array' }))).toEqual([]);
   });
+  it('also pulls embedded images out of word/media, bytes intact (so chart text is OCR-able)', async () => {
+    // A REAL png (not garbage) so a broken extractor that mangles bytes would fail the round-trip.
+    const realPng = encodePng(4, 4, 3, Uint8ClampedArray.from({ length: 4 * 4 * 3 }, (_, i) => (i * 11) & 0xff));
+    const z = new JSZip();
+    z.file('word/document.xml', '<w:document><w:body><w:p><w:r><w:t>Body.</w:t></w:r></w:p></w:body></w:document>');
+    z.file('word/media/image1.png', realPng);
+    const prims = await docxExtractor('d.docx', await z.generateAsync({ type: 'uint8array' }));
+    const img = prims.find((p) => p.kind === 'image') as ImagePrimitive;
+    expect(img).toBeTruthy();
+    expect(img.mime).toBe('image/png');
+    expect(img.source).toBe('d.docx#image1.png');
+    expect(Array.from(img.bytes)).toEqual(Array.from(realPng)); // bytes round-trip exactly
+  });
+  it('caps embedded media at MAX_EMBEDDED_IMAGES (51 entries → 50 primitives)', async () => {
+    const z = new JSZip();
+    z.file('word/document.xml', '<w:document><w:body/></w:document>');
+    for (let i = 1; i <= 51; i++) z.file(`word/media/image${i}.png`, new Uint8Array([0x89, 0x50, 0x4e, 0x47, i & 0xff]));
+    const prims = await docxExtractor('d.docx', await z.generateAsync({ type: 'uint8array' }));
+    expect(prims.filter((p) => p.kind === 'image')).toHaveLength(50);
+  });
+  it('skips an embedded image larger than MAX_IMAGE_BYTES', async () => {
+    const z = new JSZip();
+    z.file('word/document.xml', '<w:document><w:body><w:p><w:r><w:t>Body.</w:t></w:r></w:p></w:body></w:document>');
+    z.file('word/media/huge.png', new Uint8Array(25 * 1024 * 1024 + 1)); // 1 byte over the 25 MiB cap
+    const prims = await docxExtractor('d.docx', await z.generateAsync({ type: 'uint8array' }));
+    expect(prims.some((p) => p.kind === 'image')).toBe(false); // oversized image dropped
+    expect(prims.some((p) => p.kind === 'text')).toBe(true); // body text still extracted
+  });
 });
 
 describe('pptxExtractor', () => {
   it('emits one text primitive per slide, in slide order', async () => {
     const prims = (await pptxExtractor('deck.pptx', await makePptx([['Title A', 'bullet'], ['Title B']]))) as TextPrimitive[];
-    expect(prims).toHaveLength(2);
-    expect(prims[0]!.source).toContain('slide1');
-    expect(prims[0]!.text).toContain('Title A');
-    expect(prims[1]!.text).toContain('Title B');
+    const texts = prims.filter((p) => p.kind === 'text') as TextPrimitive[];
+    expect(texts).toHaveLength(2);
+    expect(texts[0]!.source).toContain('slide1');
+    expect(texts[0]!.text).toContain('Title A');
+    expect(texts[1]!.text).toContain('Title B');
+  });
+  it('pulls embedded slide images out of ppt/media', async () => {
+    const z = new JSZip();
+    z.file('ppt/presentation.xml', '<p:presentation/>');
+    z.file('ppt/slides/slide1.xml', '<p:sld><a:t>Slide</a:t></p:sld>');
+    z.file('ppt/media/image2.jpeg', new Uint8Array([0xff, 0xd8, 0xff, 1, 2]));
+    const prims = await pptxExtractor('deck.pptx', await z.generateAsync({ type: 'uint8array' }));
+    const img = prims.find((p) => p.kind === 'image') as ImagePrimitive;
+    expect(img.mime).toBe('image/jpeg');
+    expect(img.source).toBe('deck.pptx#image2.jpeg');
   });
 });
 
