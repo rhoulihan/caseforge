@@ -56,6 +56,7 @@ Field reps need to size a non-Oracle workload onto Oracle Autonomous Database (A
 │    • POST /anonymize    real text → slugs (fail-closed, slug-conflict hard-fail)        │
 │    • POST /deanonymize  slugs → real text (no-store; LLM output only)                   │
 │    • GET  /health                                                                       │
+│    • PUT/GET/DELETE /archive/{id} · GET /archives  (opaque case zips; peeks manifest)   │
 │  Never sees the API key. Stateless: each request parses its own pre-expanded map.       │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
                      │ http://127.0.0.1:PORT
@@ -143,13 +144,22 @@ The wizard (`src/ui/`, `STEPS` in `src/ui/state.ts`) realizes the pipeline as se
 3. **Anonymize** (§6a, §8a) — local detect → rep-approved map → launcher slug replace; **and** the image scan/redact gate. Produces the `anonBundle` (the only thing downstream/LLM sees).
 4. **Confirm** — the one mandatory stop: rep reviews the sufficiency report, edits assumptions, answers gaps (cores/node, edition, …), pre-filled with the model's proposed defaults (`src/orchestrate/gate.ts`). The gate **blocks** if a *required* signal is still unmet.
 5. **Generate** — `runPipeline` (`src/orchestrate/index.ts`): triage → apply gate answers → deterministic size → LLM prose (`prose.ts`, determinism boundary intact) → assemble DocModel → render. A **token/cost budget** (`budget.ts`) accumulates usage and guards expensive steps.
-6. **Refine** — per-output feedback regenerates that output with feedback + prior draft + evidence; the rep can jump back to any earlier stage and re-run downstream.
+6. **Refine** — preview the deliverables and **regenerate**: re-run the deterministic engine with the *current* config/rates and the current customer discount (reusing the cached triage — no re-classify), then rewrite prose with the refine instruction (§8b). The rep can also adjust the discount, add more files to the case, or jump back to any earlier stage and re-run downstream.
 7. **Export** — HTML + browser print-to-PDF.
 
 ### 8a. Step 3 is a two-step, fail-closed gate — *new in v0.4.0*
 When the bundle contains images, Step 3 splits in two and the step-advance gate fails closed (`stepValidity`: an `anonBundle` containing an image is **not** advance-valid until `imagesReviewed`):
 - **Scan images for hidden text** (gated *before* Anonymize): a local OCR pass (`recognizeWords`) runs over every image, the recognized words are folded into the rep-approved candidate map (each image-derived phrase **badged to its source image** via `detectCandidatesInImage` + `mergeDetected`), and the OCR words are cached **by primitive index** (not source — two images can share a source file).
 - **Anonymize & review**: text primitives are slug-replaced via the launcher; images are redacted by painting opaque boxes over matched phrases (reusing the cached OCR — no second scan), and each redacted image is surfaced for the rep to review and optionally exclude from the vision pass. On a mid-scan failure the rep gets honest messaging and the preview object URLs are revoked.
+
+### 8b. Customer discount, always-current regeneration & business-case archives — *new in v0.4.0 (staged)*
+Three coupled additions, designed in their own specs and summarized here:
+
+- **Customer discount** (`src/engine/discount.ts`). A per-case discount (`config.discountPct`, 0–100, set in Step 1 and adjustable in Step 6) scales only the *proposed* Oracle components (`adbPrimary`, `warmDrAdd`, `coldDrAdd`, `migrationPs`); the baseline on-prem spend stays at list, so savings and TCO reflect the negotiated price. `applyDiscount` is a **strict no-op at 0%** (returns the same reference → goldens byte-identical). `assembleDocModel` applies it before the TCO math and also scales the sizing-scenario Oracle rates, so every customer-facing figure is consistent; the renderer shows "list → net (N% off)" and `buildProseContext` tells the LLM the figures are already net. The LLM never sees the discount as an input — only the resulting (anon-safe) figures.
+- **Always-current regeneration.** Both Generate (Step 5) and Refine (Step 6) call `runPipeline` with the cached triage, the current `ENGINE_CONFIG`/rates, and the current discount — recomputing all numbers rather than replaying the frozen `docModel`. This is what makes reopening an old archived case safe: regenerating refreshes its numbers to today's rates. The refine free-text instruction is **detect-and-blocked then slug-anonymized** before the LLM (`src/ui/refine.ts`, fail-closed), and prior refinements replay for continuity.
+- **Business-case archives** (`src/archive/`). Each generated case is persisted as a portable, launcher-managed `~/CaseForge/archives/<caseId>.zip` (sources + the anonymized bundle + every versioned content package + a resume log). A pre-wizard **home screen** lists saved cases (New / Open / Delete); opening one hydrates the wizard straight into Refine (no API key needed to view). The SPA owns the zip format (JSZip); the Go launcher gains `PUT/GET/DELETE /archive/{id}` + `GET /archives` and is a dumb blob store that peeks only at `manifest.json`. Every generate/refine/add-files **appends** a `versions/NNN/` package — regeneration never deletes a prior one. Adding files later returns to Drop files with the case retained and detects only the new files, extending the approved map (`extendMap`). Archives contain PII and are local-only.
+
+The full mechanics live in [Customer Discount & Always-Current Regeneration](./2026-06-07-discount-and-live-regeneration-design.md) and [Business-Case Archives](./2026-06-07-business-case-archives-design.md).
 
 ## 9. Source Profile (MongoDB v1) — the extension seam
 A profile (`src/profile/`) bundles: the **signal schema** (§7), the **sizing/TCO model** (ported `sizing_calc.py`/`tco_calc.py` → `src/engine/`), the **prompt templates** for analysis/generation, the **assumptions schema + defaults**, the **cost components & web-search queries**, and the **doc templates**. Adding PostgreSQL/MySQL/SQL Server later = a new profile implementing the same interface; ingest, anonymize, redaction, classify, adapter, engine, renderer, and refine loop are reused unchanged. A MongoDB **Atlas source-profile analysis** path + sample fixture (`samples/atlas-demo`) is documented in `docs/ATLAS-SOURCE-PROFILE.md`.
@@ -187,7 +197,7 @@ caseforge/
 ## 14. Tech stack
 - **Launcher:** Go (single static binary per OS, stdlib only; trivial cross-compile; no runtime). `caseforge serve` (127.0.0.1 SPA + anonymize endpoints) and the `anonymize`/`deanonymize` directory-mode CLI.
 - **SPA:** **Preact + Vite**, TypeScript strict, built to static output in `dist/`. Vendored libs (no CDN, for offline/local): `@kenjiuno/msgreader` (`.msg`), `exceljs` (`.xlsx`), `unpdf`/pdf.js (PDF), `jszip` (OOXML), `postal-mime` (`.eml`), `tesseract.js` v7 + `tesseract.js-core` (offline OCR, code-split). Provider calls are thin fetch wrappers behind the `LLM` interface.
-- **Tests:** Vitest (442 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
+- **Tests:** Vitest (486 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
 - **No build step at runtime** — the shipped artifact is static files.
 
 ## 15. Image redaction module — *new in v0.4.0 (staged)*
@@ -212,7 +222,7 @@ New source DB = new Source Profile (signal schema + model + templates + cost que
 - App name — **resolved: CaseForge.**
 - Exact model defaults per provider and how the model list is updated — defaults live in config (`claude-opus-4-8`); revisit per Claude API reference at build time.
 - Verification depth default (single vs dual pass) and its token budget — open.
-- How much project state to persist and where — currently session-only; persistence is open.
+- ~~How much project state to persist and where — currently session-only; persistence is open.~~ **Resolved (v0.4.0):** launcher-managed business-case archives under `~/CaseForge/archives/*.zip` (§8b); the API key remains session-only and is never archived.
 - Multi-profile / IDN-name detection / explicit OCR-worker termination — tracked as non-blocking follow-ups.
 
 ## 19. Milestones (status)
@@ -221,5 +231,5 @@ New source DB = new Source Profile (signal schema + model + templates + cost que
 3. ~~**Provider adapter + analyze/generate** for both providers.~~ Done.
 4. ~~**Three outputs + claims checklist + refine loop.**~~ Done.
 5. ~~**Packaging**: Go launcher + zip + samples; optional hosted build.~~ Done.
-6. ~~**Hardening**: anonymization, error handling, broadened ingest, image OCR redaction, embedded-image extraction.~~ Done through v0.3.0; v0.4.0 staged.
+6. ~~**Hardening**: anonymization, error handling, broadened ingest, image OCR redaction, embedded-image extraction.~~ Done through v0.3.0; v0.4.0 staged (also adds the customer discount, always-current regeneration, and business-case archives — §8b).
 7. **Manual OCR verification** → cut `v0.4.0`. Pending.

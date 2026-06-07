@@ -4,7 +4,7 @@
 
 You don't need to be technical to use CaseForge. This guide walks you through it start to finish. If you can drag files into a window and click "Next," you can do this.
 
-> *Updated 2026-06-07 — reflects the current design through v0.4.0: the two-step Scan-images-then-Anonymize flow in Step 3, the broadened set of file types, and the in-app Help, About, and error-report dialog.*
+> *Updated 2026-06-07 — reflects the current design through v0.4.0: the home screen of saved cases, the two-step Scan-images-then-Anonymize flow in Step 3, the broadened set of file types, a customer discount, regenerating with up-to-date numbers, adding files to a saved case, and the in-app Help, About, and error-report dialog.*
 
 ---
 
@@ -103,6 +103,19 @@ You can open either at any step without losing your place.
 
 ---
 
+# Your saved cases (the home screen)
+
+When CaseForge opens, you land on a **home screen** that lists every case you've generated before:
+
+- **+ New business case** → start fresh at Step 1 (the walkthrough below).
+- **A saved case** → click it to **Open**. CaseForge reopens it straight at **Refine (Step 6)** with the documents already loaded — no API key needed just to read them. To regenerate or add files you'll re-enter your key (it's never saved). A small **✕ / Delete** removes a case you no longer want.
+
+Cases save themselves: the first time you generate, and again after every refine or after you add files. You don't click "save." Each save keeps the **previous versions too** — refining or regenerating never throws away what you had before.
+
+> **Where they live:** saved cases are kept on *your* laptop, in a `CaseForge/archives` folder in your home directory, one `.zip` per case. **They contain the real customer files and the real-name documents**, so treat that folder like any other confidential customer material (it's never uploaded anywhere). To get rid of a case for good, delete it from the home screen.
+
+---
+
 # The wizard, step by step
 
 The seven steps run down the left side. Move forward with **Next →** (it lights up once a step is ready) and back with **← Back**. You can also click any earlier step in the sidebar to revisit it.
@@ -112,6 +125,7 @@ The seven steps run down the left side. Move forward with **Next →** (it light
 - Paste your **API key**.
 - Type the **Company name** (the customer, e.g. *Acme Mutual Insurance*).
 - Leave **Token budget** at the default unless you want a tighter spending cap.
+- *(Optional)* **Customer discount (%)** — if you're proposing a discount, enter it here. It comes off the **proposed Oracle solution** (Autonomous Database + migration + disaster recovery); the customer's *current* spend stays at list, so the savings and business case reflect your real offer. Leave it at **0** for list pricing. You can change it later in Refine.
 - When both the key and company name are filled, the page shows **"Ready — click Next."** Click **Next →**.
 
 ## Step 2 · Drop files
@@ -156,7 +170,7 @@ You can generate from a *Directional* estimate — the documents will say so cle
 ## Step 5 · Generate
 - *(Optional, recommended)* Click **Research costs (web search)** to have the AI look up current market pricing for the comparison. It takes a minute and costs a few cents. Skip it to use built-in default estimates.
 - Click **Generate deliverables →**. A **cost ticker** shows your spend as it works.
-- **The important part:** all the *numbers* (sizing, savings, 5-year TCO) are computed by CaseForge itself — the AI only researches prices, reads charts, and writes the words. The numbers are final and locked; only wording can change next. When it says the deliverables are generated, click **Next →**.
+- **The important part:** all the *numbers* (sizing, savings, 5-year TCO) are computed by CaseForge itself — the AI only researches prices, reads charts, and writes the words. The AI never makes up a size or a cost. (In the next step you can still change the numbers by adjusting the discount or adding files — but it's always CaseForge's math doing the calculating, never the AI.) When it says the deliverables are generated, click **Next →**.
 
 ## Step 6 · Refine
 - Preview the documents with the tabs:
@@ -165,8 +179,14 @@ You can generate from a *Directional* estimate — the documents will say so cle
   - **Technical Review** — the internal technical deep-dive.
   - **Claims Checklist** — every claim with its evidence, for your talking points.
   Real names are shown here (restored on your laptop).
-- Want different wording? Click a quick chip — **More concise**, **Executive tone**, **Emphasize DR resilience**, **Add risk framing** — or type your own request, then **Regenerate prose**. **The numbers never change** — only the wording.
+- Want different wording? Click a quick chip — **More concise**, **Executive tone**, **Emphasize DR resilience**, **Add risk framing** — or type your own request, then **Regenerate**.
+- **Change the discount** here too: edit **Customer discount (%)** and click **Regenerate** to re-price the proposal.
+- **What "Regenerate" does:** CaseForge re-runs its own sizing and cost math with the **current** pricing and your current discount, then the AI rewrites the wording around the fresh figures. So the numbers *can* change when you regenerate — for example after you change the discount, add files, or reopen an older case (which re-prices it at today's rates). As always, CaseForge computes every number; the AI only writes the words.
+- **Add more files** to this case with **+ Add more files**: CaseForge keeps everything you have, takes you back to Drop files to add the new ones (only the *new* files get scanned and anonymized — the rest are already done), then regenerates with your latest request applied. Use this when the customer sends something after the fact.
+- A note you type before clicking **+ Add more files** is carried along and applied when the case regenerates.
 - Click **Next →** when you're happy.
+
+> If you typed a real name (a person, company, or server) into the refine box that CaseForge hasn't seen before, it **stops and asks you to add it in Step 3 first** — so a real name can never slip to the AI through the refine box. Add it to the list (or reword), then regenerate.
 
 ## Step 7 · Export
 - Download what you need: **each document on its own** (the filename carries the customer's name — e.g. `business-case-northwind.html`, `sizing-brief-northwind.html`, `technical-review-northwind.html`, `claims-checklist-northwind.html`), **All deliverables (one HTML)** (`caseforge-deliverables.html`) for a single shareable file, or the underlying **Data (JSON)** (`caseforge-docmodel.json`).
@@ -184,6 +204,7 @@ Yes — privacy is the whole point of the design.
 - **Images are handled too.** CaseForge OCRs every chart/screenshot **locally (offline, no AI)**, folds any text it finds into the same review list, and **blacks it out of the picture** before the image is sent to the AI's vision model. You review every redacted image, and can drop any one you don't want sent.
 - **Zero-retention.** CaseForge uses the providers' no-training, no-retention settings.
 - **Your API key never touches a disk.** It lives only in the browser for the current session.
+- **Saved cases stay on your laptop.** When CaseForge saves a case so you can reopen it, it writes a file to a `CaseForge/archives` folder in your home directory. That file **does** contain the real customer material (the original files and the real-name documents) — it's how reopening works — but it's never uploaded anywhere. Only the *coded* version is ever sent to the AI, even when you regenerate or add files. Treat that folder like any confidential customer data, and delete cases you no longer need from the home screen.
 
 *One honest caveat — images.* The image OCR/redaction is **best-effort**. Most baked-in text gets caught and blacked out, but unusual fonts, low-resolution charts, or rotated text can defeat OCR — that's why CaseForge shows you every redacted preview and lets you exclude an image from the AI step. If you spot a name, email, or server still visible in a preview, **untick "send this image to the AI"** for it (and, if the detail matters, type it into a `.txt`/`.csv` instead).
 
@@ -239,6 +260,12 @@ You can also reach support any time at `rick.houlihan@oracle.com`.
 **Which file formats can I drop in?** Spreadsheets (`.xlsx`), Word (`.docx`), PowerPoint (`.pptx`), PDFs (`.pdf`), email (`.msg`, `.eml`), web/markup (`.html`, `.xml`, `.rtf`), text data (`.csv`, `.tsv`, `.json`, `.txt`, `.md`), and chart images (`.png`, `.jpg`, `.gif`, `.webp`). Legacy `.xls`/`.doc` aren't read — re-save as `.xlsx`/`.docx` or export to PDF.
 
 **What happens to images?** They're OCR'd on your laptop, any text is folded into the Step 3 review list, and matched text is blacked out before the image is sent to the AI. You review every redacted image and can exclude any one.
+
+**Can I come back to a case later?** Yes. Every case you generate is saved automatically and appears on the **home screen** when you open CaseForge. Click it to reopen at Refine, where you can tweak wording, change the discount, or **add more files** the customer sent later — then regenerate. Saved cases live on your laptop (see [Is this safe?](#is-this-safe)).
+
+**If I reopen an old case, are the prices current?** They show as last generated, but click **Regenerate** and CaseForge re-prices everything at today's rates (and your current discount). That's the safe habit for an older case.
+
+**Can I give the customer a discount?** Yes — enter it in **Step 1 · Setup** (or adjust it in **Refine**). It applies to the proposed Oracle solution; the customer's current spend stays at list, so the savings shown are your real offer.
 
 **Can I try it without a real customer?** Yes — your download includes a **`samples/northwind-demo`** folder of fictional artifacts. Drop those files into Step 2 to see the whole flow.
 

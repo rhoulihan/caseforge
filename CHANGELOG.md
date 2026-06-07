@@ -25,6 +25,36 @@ every release below:
 
 ### Added
 
+- **Customer discount on the proposed solution.** A per-case discount (0–100%, entered in Setup and
+  adjustable in Refine) scales only the proposed Oracle components (ADB primary + warm/cold DR +
+  migration PS) while the baseline on-prem spend stays at list, so savings and TCO reflect the rep's
+  negotiated price. `src/engine/discount.ts` (`discountFactor`/`applyDiscount`) is a strict no-op at
+  0% (goldens stay byte-identical); the renderer shows "list → your price (N% off)" and the prose
+  context tells the LLM the Oracle figures are already net.
+- **Always-current regeneration.** "Regenerate" (Step 6) and "Re-generate" (Step 5) now re-run the
+  deterministic sizing + TCO engine with the *current* `ENGINE_CONFIG`, current rates, and the current
+  discount — reusing the cached triage (no re-classify) — then rewrite prose. Reopening an old archived
+  case and regenerating refreshes its numbers to today's rates rather than replaying frozen figures.
+- **Business-case archives.** Each generated case is persisted as a portable, launcher-managed
+  `~/CaseForge/archives/<caseId>.zip` containing the original source files, the anonymized bundle the
+  LLM saw, every generated content package (versioned, never overwritten), and a resume log. A
+  pre-wizard **home screen** lists saved cases (New / Open / Delete); opening one hydrates the wizard
+  straight into Refine (no API key needed to view). The SPA owns the zip format (`src/archive/`); the
+  Go launcher is a dumb blob store with new `PUT/GET/DELETE /archive/{id}` and `GET /archives` routes
+  that peek only at `manifest.json`.
+- **Refine continuity + versioned content packages.** Reopening a case replays its accumulating
+  `refinementHistory` so the narrative continues rather than starting cold (the LLM layer is stateless,
+  so "resume" is a deterministic `docModel` reload + instruction replay). Every generate/refine/add-files
+  appends a new `versions/NNN/` package (`DocModel` + four deliverables + meta); prior versions are
+  never deleted on regen.
+- **Add more files during refine.** A Step 6 action returns to Drop files with the existing case
+  retained; only the new files are detected and folded into the approved map via `extendMap`
+  (existing slugs preserved, new slugs seeded from the max existing index so a removal gap can't cause
+  a collision), then the case regenerates with the carried instruction applied.
+- **Refinement-instruction anonymization (fail-closed).** The Step 6 free-text box and any carried
+  add-files note run through local name-detection first: an instruction naming anything not in the
+  approved map is **blocked** (never sent), otherwise it is slug-anonymized before reaching the LLM and
+  the raw text is kept local in the resume log (`src/ui/refine.ts`).
 - **Local OCR image redaction before vision.** Chart/screenshot images are read by the LLM's vision
   model, so text baked into them could leak. A local, fully offline OCR pass (tesseract.js v7; WASM
   self-hosted under `/tesseract`, assets assembled by `scripts/setup-tesseract-assets.mjs`) finds
@@ -52,6 +82,10 @@ every release below:
 
 ### Changed
 
+- **Regeneration is no longer wording-only.** Earlier behavior froze the numbers at first generation
+  and let refine change only prose. Regeneration now recomputes every authoritative number from current
+  settings (see "Always-current regeneration" above); the determinism boundary is unchanged — the engine
+  still owns the math, the LLM still only writes prose.
 - **Redaction policy is SEND-WITH-WARNING.** OCR is best-effort: on failure or low confidence the
   image stays usable but is flagged, and the rep reviews every redacted preview in Step 3.
 - **Redaction reuses the detection-pass OCR.** When an image is redacted it reuses the words the scan
