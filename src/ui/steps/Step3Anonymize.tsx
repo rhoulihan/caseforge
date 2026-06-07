@@ -7,7 +7,7 @@ import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 import { detectCandidates, detectCandidatesInImage, mergeDetected, type DetectedPhrase, type PhraseType } from '../../anon/detect';
-import { suggestSlug, type MapEntry } from '../../anon/mapping';
+import { suggestSlug, extendMap } from '../../anon/mapping';
 import type { EvidenceBundle, Primitive } from '../../ingest/types';
 import type { OcrWord } from '../../redaction/match';
 
@@ -23,14 +23,6 @@ interface ImgReview {
 type OcrCache = Record<number, { words: OcrWord[]; meanConfidence: number }>;
 
 const TYPES: PhraseType[] = ['org', 'person', 'host', 'term'];
-
-function mapFor(detected: DetectedPhrase[]): MapEntry[] {
-  const n: Record<string, number> = {};
-  return detected.map((d) => {
-    n[d.type] = (n[d.type] ?? 0) + 1;
-    return { phrase: d.phrase, slug: suggestSlug(d.type, n[d.type]!) };
-  });
-}
 
 export function Step3Anonymize() {
   const { state, patch, launcher } = useWizard();
@@ -53,7 +45,7 @@ export function Step3Anonymize() {
   useEffect(() => {
     if (state.bundle && !state.imagesScanned && state.detected.length === 0 && state.map.length === 0) {
       const detected = detectCandidates(state.bundle, state.config?.companyName ?? '');
-      patch({ detected, map: mapFor(detected) });
+      patch({ detected, map: extendMap(state.map, detected) });
     }
   }, [state.bundle, state.imagesScanned, state.detected.length, state.map.length, state.config, patch]);
 
@@ -119,7 +111,7 @@ export function Step3Anonymize() {
       setOcrCache(cache);
       setScanFailures(failures);
       // The candidate list changed → any prior anonymize is stale; require re-anonymize.
-      patch({ detected: merged, map: mapFor(merged), anonBundle: null, imagesScanned: true, imagesReviewed: false });
+      patch({ detected: merged, map: extendMap(state.map, merged), anonBundle: null, imagesScanned: true, imagesReviewed: false });
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'unexpected', title: 'Image scan failed', context: { step: 3 } });

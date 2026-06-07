@@ -109,4 +109,53 @@ describe('Step5Generate', () => {
     await screen.findByText(/could not be saved/i); // visible, not silent
     expect(screen.getByText(/1 deliverable\(s\) generated/i)).toBeTruthy(); // deliverables NOT lost
   });
+
+  it('an add-files generate applies the carried refine instruction and clears the flag', async () => {
+    runPipeline.mockClear(); // prior tests in this file also call runPipeline — count only this test's call
+    runPipeline.mockImplementation(async (cfg: { proseInstruction?: string }) => {
+      void cfg;
+      return {
+        docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, companyName: 'Acme', discountPct: 0 },
+        rendered: [{ filename: 'business-case-acme.html', html: '<x/>' }],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        budgetLog: [],
+        gate: { items: [], blocked: false, reasons: [] },
+      };
+    });
+    const launcher = {
+      health: async () => true,
+      saveArchive: async () => undefined,
+      anonymize: async (_m: unknown, text: string) => ({ text, count: 0 }), // no real names in "be concise"
+    } as unknown as LauncherClient;
+    function Probe() {
+      const { state } = useWizard();
+      return <span data-testid="mode">{String(!!state.addFilesMode)}</span>;
+    }
+    render(
+      <ErrorProvider>
+        <WizardProvider
+          launcher={launcher}
+          initial={{
+            config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 },
+            hasApiKey: true,
+            bundle: anonBundle,
+            anonBundle,
+            triage,
+            caseId: 'acme-1',
+            map: [{ phrase: 'Acme', slug: 'CF_ORG_01' }],
+            versions: [{ id: '001', createdAt: 't0', trigger: 'initial', discountPct: 0, docModel: {} as never, rendered: [] }],
+            addFilesMode: true,
+            pendingRefinement: 'be concise',
+          }}
+        >
+          <Step5Generate />
+          <Probe />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    fireEvent.click(screen.getByText(/Generate deliverables/i));
+    await waitFor(() => expect(runPipeline).toHaveBeenCalledTimes(1));
+    expect((runPipeline.mock.calls[0]![0] as { proseInstruction?: string }).proseInstruction).toBe('be concise'); // carried note applied
+    await waitFor(() => expect(screen.getByTestId('mode').textContent).toBe('false')); // add-files flag cleared
+  });
 });

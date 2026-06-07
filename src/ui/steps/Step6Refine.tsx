@@ -10,14 +10,14 @@ import { useErrors } from '../ErrorContext';
 import { runPipeline } from '../../orchestrate';
 import { buildRunConfig, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { persistCase } from '../../archive/persist';
-import { detectCandidates } from '../../anon/detect';
+import { prepareRefineInstruction } from '../refine';
 import type { ArchiveVersion } from '../state';
 
 const TABS = ['Business Case', 'Sizing Brief', 'Technical Review', 'Claims Checklist'];
 const CHIPS = ['More concise', 'Executive tone', 'Emphasize DR resilience', 'Add risk framing'];
 
 export function Step6Refine() {
-  const { state, patch, getApiKey, setApiKey, launcher } = useWizard();
+  const { state, patch, goTo, getApiKey, setApiKey, launcher } = useWizard();
   const { capture, breadcrumb } = useErrors();
   const [active, setActive] = useState(0);
   const [instr, setInstr] = useState('');
@@ -40,29 +40,19 @@ export function Step6Refine() {
 
   async function regenerate(): Promise<void> {
     if (!state.config) return;
+    // A normal in-place refine means any pending add-files detour was abandoned — clear it so a later
+    // Step 5 generate isn't mislabeled 'add-files' or re-applies a stale carried note.
+    if (state.addFilesMode || state.pendingRefinement) patch({ addFilesMode: false, pendingRefinement: undefined });
     setBusy(true);
     setError('');
     try {
       const raw = instr.trim();
-      // The refine box is FREE TEXT — a name typed here that isn't in the map would pass the literal
-      // anonymizer through unchanged (count 0, no error) and leak to the LLM. So detect names locally
-      // first and block (fail-closed) if any aren't already in the approved map; the rep adds them in
-      // Step 3 or rephrases.
-      if (raw) {
-        const mapped = new Set(state.map.map((m) => m.phrase.toLowerCase()));
-        const unmapped = detectCandidates({ files: [], primitives: [{ kind: 'text', source: 'refine-instruction', text: raw }] }, state.config?.companyName ?? '').filter(
-          (d) => !mapped.has(d.phrase.toLowerCase()),
-        );
-        if (unmapped.length > 0) {
-          setError(`Your instruction may contain names not in the anonymization list: ${unmapped.map((d) => d.phrase).join(', ')}. Add them in Step 3 (Anonymize) or rephrase — otherwise they'd be sent to the AI.`);
-          return;
-        }
+      // Prepare the instruction (fail-closed): block names not in the map, slug-anonymize, replay history.
+      const prepared = await prepareRefineInstruction(raw, state, launcher);
+      if ('blocked' in prepared) {
+        setError(`Your instruction may contain names not in the anonymization list: ${prepared.blocked.join(', ')}. Add them in Step 3 (Anonymize) or rephrase — otherwise they'd be sent to the AI.`);
+        return;
       }
-      // Slug-anonymize the instruction BEFORE it reaches the LLM (the raw text never leaves the machine).
-      // Fail-closed: if the launcher can't anonymize, abort rather than risk sending a real name.
-      const slugged = raw ? (await launcher.anonymize(state.map, raw)).text : '';
-      // Replay prior refinements (already slugged) + this one, so wording changes accumulate (continuity).
-      const effective = [...state.refinementHistory.map((h) => h.slugged), slugged].filter(Boolean).join(' Then: ') || undefined;
       // Recompute with current settings — reuse the cached triage, apply the current discount, then rewrite prose.
       const cfg = buildRunConfig({
         state,
@@ -70,7 +60,7 @@ export function Step6Refine() {
         tcoInputs: state.tcoInputs ?? DEFAULT_TCO_INPUTS,
         claims: docModel.claims,
         preparedDate: docModel.preparedDate,
-        proseInstruction: effective,
+        proseInstruction: prepared.effective,
       });
       const next = await runPipeline(cfg);
       if (!next.docModel) {
@@ -84,7 +74,7 @@ export function Step6Refine() {
       const id = String(state.versions.length + 1).padStart(3, '0');
       const version: ArchiveVersion = { id, createdAt: now, trigger: 'refine', discountPct: state.config?.discountPct ?? 0, docModel: next.docModel, rendered: next.rendered };
       const versions = [...state.versions, version];
-      const refinementHistory = raw ? [...state.refinementHistory, { ts: now, instruction: raw, slugged, versionId: id }] : state.refinementHistory;
+      const refinementHistory = raw ? [...state.refinementHistory, { ts: now, instruction: raw, slugged: prepared.slugged, versionId: id }] : state.refinementHistory;
       patch({ pipeline: next, versions, refinementHistory });
       setInstr('');
       const saveErr = await persistCase(launcher, { ...state, pipeline: next, versions, refinementHistory });
@@ -104,6 +94,12 @@ export function Step6Refine() {
   const setDiscount = (pct: number): void => {
     if (!state.config) return;
     patch({ config: { ...state.config, discountPct: Math.max(0, Math.min(100, pct || 0)) } });
+  };
+
+  // Carry the typed note into the add-files detour, then return to Step 2 to add evidence.
+  const addMoreFiles = (): void => {
+    patch({ addFilesMode: true, pendingRefinement: instr.trim() || undefined });
+    goTo(2);
   };
 
   return (
@@ -153,9 +149,15 @@ export function Step6Refine() {
             <span class="cf-hint">This case was opened from an archive — enter your key to regenerate. It stays in this session only.</span>
           </label>
         ) : null}
-        <button type="button" class="cf-btn" disabled={busy || needsKey} onClick={() => void regenerate()}>
-          {busy ? 'Regenerating…' : 'Regenerate'}
-        </button>
+        <div class="cf-anon-actions">
+          <button type="button" class="cf-btn" disabled={busy || needsKey} onClick={() => void regenerate()}>
+            {busy ? 'Regenerating…' : 'Regenerate'}
+          </button>
+          <button type="button" class="cf-btn ghost" disabled={busy} onClick={addMoreFiles}>
+            + Add more files
+          </button>
+        </div>
+        <span class="cf-hint">“Add more files” keeps this case, returns to Drop files to add evidence (only the new files are anonymized), then re-generates — applying the note above.</span>
         {error ? <p class="cf-error">{error}</p> : null}
       </div>
     </section>

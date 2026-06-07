@@ -11,6 +11,7 @@ import { createLLM } from '../../provider';
 import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { newCaseId } from '../../archive/serialize';
 import { persistCase } from '../../archive/persist';
+import { prepareRefineInstruction } from '../refine';
 import type { ArchiveVersion } from '../state';
 import type { TcoInputs } from '../../engine/types';
 import type { ClaimInput } from '../../render/types';
@@ -57,12 +58,29 @@ export function Step5Generate() {
     setSaveWarning('');
     setCheckpoints([]);
     try {
+      // On an add-files generate, apply the instruction the rep carried from Step 6 — anonymized + replayed
+      // (fail-closed: if it names someone not in the map, block and point them back to Step 3).
+      const addingFiles = !!state.addFilesMode;
+      let proseInstruction: string | undefined;
+      let pendingSlugged = '';
+      if (addingFiles) {
+        // ALWAYS prepare on add-files (even with no new note) so prior refinements still REPLAY — otherwise
+        // the regenerated deliverables would silently lose the accumulated wording.
+        const prepared = await prepareRefineInstruction(state.pendingRefinement ?? '', state, launcher);
+        if ('blocked' in prepared) {
+          setError(`Your earlier note names ${prepared.blocked.join(', ')} — add them in Step 3 (Anonymize), or go back to Step 6 to edit the note, before generating.`);
+          return;
+        }
+        proseInstruction = prepared.effective; // replays prior refinements + the carried note (if any)
+        pendingSlugged = prepared.slugged;
+      }
       const cfg = buildRunConfig({
         state,
         apiKey: getApiKey(),
         tcoInputs: tco,
         claims,
         preparedDate: todayIso(),
+        proseInstruction,
         onCheckpoint: (cp) => setCheckpoints((cs) => [...cs, cp]),
       });
       const out = await runPipeline(cfg);
@@ -72,18 +90,20 @@ export function Step5Generate() {
         breadcrumb('warn', `generate produced no docModel: ${out.error ?? 'blocked'}`);
         return;
       }
-      // Assign a caseId on first generate; preserve the original creation time across re-saves. A fresh
-      // generate is content-package version 001 (refinements append further versions in Step 6).
+      // Assign a caseId on first generate; preserve the original creation time across re-saves.
       const now = new Date().toISOString();
       const caseId = state.caseId ?? newCaseId(state.config?.companyName ?? 'case', new Date());
       const createdAt = state.caseCreatedAt ?? now;
       // APPEND a new content-package version — never reset (a re-generate must not delete prior versions
       // or the refinement log, per the archive's "never delete on regen" rule).
       const id = String((state.versions?.length ?? 0) + 1).padStart(3, '0');
-      const version: ArchiveVersion = { id, createdAt: now, trigger: 'initial', discountPct: state.config?.discountPct ?? 0, docModel: out.docModel, rendered: out.rendered };
+      const version: ArchiveVersion = { id, createdAt: now, trigger: addingFiles ? 'add-files' : 'initial', discountPct: state.config?.discountPct ?? 0, docModel: out.docModel, rendered: out.rendered };
       const versions = [...(state.versions ?? []), version];
-      const nextState = { ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions };
-      patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions });
+      // Log the carried instruction (if any) against the version it produced.
+      const refinementHistory = addingFiles && state.pendingRefinement?.trim() ? [...state.refinementHistory, { ts: now, instruction: state.pendingRefinement.trim(), slugged: pendingSlugged, versionId: id }] : state.refinementHistory;
+      const cleared = { addFilesMode: false, pendingRefinement: undefined };
+      const nextState = { ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions, refinementHistory, ...cleared };
+      patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions, refinementHistory, ...cleared });
       // Save (best-effort — a save failure must NOT lose the deliverables, but must be VISIBLE).
       const err = await persistCase(launcher, nextState);
       if (err) {
