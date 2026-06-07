@@ -30,6 +30,18 @@ import type { DocModel } from '../../render/types';
 import type { PipelineOutput } from '../../orchestrate';
 import type { EvidenceBundle } from '../../ingest/types';
 import type { TriageResult } from '../../classify/types';
+import type { LauncherClient } from '../../launcher/client';
+
+// Launcher mock: anonymize slugs a real name (proves the refine instruction is anonymized before the LLM);
+// saveArchive spies the save-on-refine.
+const saveArchive = vi.fn(async () => undefined);
+const mockLauncher = {
+  anonymize: async (_m: unknown, text: string) => ({ text: text.replace(/Acme/g, 'CF_ORG_01'), count: 1 }),
+  deanonymize: async (_m: unknown, text: string) => ({ text, count: 0 }),
+  health: async () => true,
+  saveArchive,
+} as unknown as LauncherClient;
+const map = [{ phrase: 'Acme', slug: 'CF_ORG_01' }];
 
 const pipeline = {
   docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, claims: [], preparedDate: '2026-06-05' } as unknown as DocModel,
@@ -48,10 +60,15 @@ const pipeline = {
 const anonBundle: EvidenceBundle = { files: [], primitives: [{ kind: 'text', source: 'a', text: 'x' }] };
 const triage = { bindings: [] } as unknown as TriageResult;
 
+const v1 = { id: '001', createdAt: 't0', trigger: 'initial' as const, discountPct: 0, docModel: pipeline.docModel!, rendered: pipeline.rendered };
+
 function setup() {
   return render(
     <ErrorProvider>
-      <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, anonBundle, triage, pipeline }}>
+      <WizardProvider
+        launcher={mockLauncher}
+        initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, anonBundle, triage, pipeline, caseId: 'acme-1', map, versions: [v1], refinementHistory: [] }}
+      >
         <Step6Refine />
       </WizardProvider>
     </ErrorProvider>,
@@ -59,7 +76,10 @@ function setup() {
 }
 
 describe('Step6Refine', () => {
-  beforeEach(() => runPipeline.mockClear());
+  beforeEach(() => {
+    runPipeline.mockClear();
+    saveArchive.mockClear();
+  });
 
   it('previews the active deliverable and switches tabs', () => {
     setup();
@@ -78,12 +98,31 @@ describe('Step6Refine', () => {
     expect(cfg.proseInstruction).toBe('tighten the exec summary'); // instruction forwarded to prose
     expect(cfg.discountPct).toBe(15); // current discount applied → numbers recompute, not frozen
     await screen.findByText('BC REGENERATED'); // preview updated from the recompute
+    await waitFor(() => expect(saveArchive).toHaveBeenCalledTimes(1)); // save-on-refine (appends a version)
+  });
+
+  it('slug-anonymizes the refine instruction before the LLM (a real name never reaches it)', async () => {
+    setup();
+    fireEvent.input(screen.getByLabelText('Refine instruction'), { target: { value: "emphasize Acme's resilience" } });
+    fireEvent.click(screen.getByText('Regenerate'));
+    await waitFor(() => expect(runPipeline).toHaveBeenCalledTimes(1));
+    const instruction = runPipeline.mock.calls[0]![0].proseInstruction ?? '';
+    expect(instruction).toContain('CF_ORG_01'); // anonymized
+    expect(instruction).not.toContain('Acme'); // the real name never reached the LLM
+  });
+
+  it('blocks a refine whose instruction names someone NOT in the anonymization list (fail-closed)', async () => {
+    setup();
+    fireEvent.input(screen.getByLabelText('Refine instruction'), { target: { value: 'mention our partner Globex Corporation' } });
+    fireEvent.click(screen.getByText('Regenerate'));
+    await screen.findByText(/not in the anonymization list/i);
+    expect(runPipeline).not.toHaveBeenCalled(); // never sent to the LLM
   });
 
   it('a case opened without a session key shows an inline key prompt and gates Regenerate until entered', async () => {
     render(
       <ErrorProvider>
-        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: false, anonBundle, triage, pipeline }}>
+        <WizardProvider launcher={mockLauncher} initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: false, anonBundle, triage, pipeline }}>
           <Step6Refine />
         </WizardProvider>
       </ErrorProvider>,

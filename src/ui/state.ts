@@ -9,9 +9,28 @@ import type { DetectedPhrase } from '../anon/detect';
 import type { TriageResult } from '../classify/types';
 import type { GateAnswer } from '../orchestrate/gate';
 import type { PipelineOutput } from '../orchestrate';
+import type { DocModel, RenderedDoc } from '../render/types';
 
 export type WizardStepId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type Provider = 'claude' | 'openai';
+
+/** One generated content package — every generate/refine appends one; never overwritten (archive versioning). */
+export interface ArchiveVersion {
+  id: string; // zero-padded sequence, e.g. '001'
+  createdAt: string; // ISO 8601
+  trigger: 'initial' | 'refine' | 'add-files';
+  discountPct: number;
+  docModel: DocModel;
+  rendered: RenderedDoc[];
+}
+
+/** One refinement the rep applied — the raw text (local) + the slug-anonymized form actually sent to the LLM. */
+export interface RefinementEntry {
+  ts: string; // ISO 8601
+  instruction: string; // raw text the rep typed (local only)
+  slugged: string; // anonymized form sent to the LLM
+  versionId: string; // the version this refinement produced
+}
 
 export interface WizardConfig {
   provider: Provider;
@@ -44,7 +63,9 @@ export interface WizardState {
   // 5 · Generate
   tcoInputs: TcoInputs | null; // the cost inputs used to generate (persisted so Refine can recompute)
   pipeline: PipelineOutput | null;
-  // 6 · Refine
+  // 6 · Refine — content-package history + the refinement log (archive versioning / continuity)
+  versions: ArchiveVersion[]; // every generate/refine appends one; the last is the current (= pipeline)
+  refinementHistory: RefinementEntry[];
   previewReady: boolean;
 }
 
@@ -77,6 +98,8 @@ export function initialWizardState(): WizardState {
     confirmed: false,
     tcoInputs: null,
     pipeline: null,
+    versions: [],
+    refinementHistory: [],
     previewReady: false,
   };
 }

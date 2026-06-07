@@ -9,7 +9,9 @@ import { runPipeline } from '../../orchestrate';
 import { researchTcoCosts, sourcesToClaims } from '../../research/tco';
 import { createLLM } from '../../provider';
 import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from '../pipeline';
-import { serializeCase, newCaseId } from '../../archive/serialize';
+import { newCaseId } from '../../archive/serialize';
+import { persistCase } from '../../archive/persist';
+import type { ArchiveVersion } from '../state';
 import type { TcoInputs } from '../../engine/types';
 import type { ClaimInput } from '../../render/types';
 import type { BudgetCheckpoint } from '../../orchestrate/budget';
@@ -70,23 +72,27 @@ export function Step5Generate() {
         breadcrumb('warn', `generate produced no docModel: ${out.error ?? 'blocked'}`);
         return;
       }
-      // Persist the cost inputs (so Refine can recompute) + assign a caseId on first generate; preserve
-      // the original creation time across re-saves.
+      // Assign a caseId on first generate; preserve the original creation time across re-saves. A fresh
+      // generate is content-package version 001 (refinements append further versions in Step 6).
       const now = new Date().toISOString();
       const caseId = state.caseId ?? newCaseId(state.config?.companyName ?? 'case', new Date());
       const createdAt = state.caseCreatedAt ?? now;
-      patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt });
-      // Save the case archive (best-effort — a save failure must NOT lose the just-generated deliverables,
-      // but it must be VISIBLE so the rep knows the case wasn't persisted and can export manually).
-      try {
-        const zipBytes = await serializeCase({ ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt }, { caseId, createdAt, updatedAt: now });
-        await launcher.saveArchive(caseId, zipBytes);
+      // APPEND a new content-package version — never reset (a re-generate must not delete prior versions
+      // or the refinement log, per the archive's "never delete on regen" rule).
+      const id = String((state.versions?.length ?? 0) + 1).padStart(3, '0');
+      const version: ArchiveVersion = { id, createdAt: now, trigger: 'initial', discountPct: state.config?.discountPct ?? 0, docModel: out.docModel, rendered: out.rendered };
+      const versions = [...(state.versions ?? []), version];
+      const nextState = { ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions };
+      patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions });
+      // Save (best-effort — a save failure must NOT lose the deliverables, but must be VISIBLE).
+      const err = await persistCase(launcher, nextState);
+      if (err) {
+        setSaveWarning(`Deliverables generated, but this case could not be saved (${err}). You can still export it in Step 7.`);
+        breadcrumb('warn', `could not save the case archive: ${err}`);
+        capture(new Error(err), { category: 'launcher_error', title: 'Could not save the case archive', context: { step: 5 }, open: false });
+      } else {
         setSaveWarning('');
         breadcrumb('info', `case archived as ${caseId}`);
-      } catch (e) {
-        setSaveWarning(`Deliverables generated, but this case could not be saved (${(e as Error).message}). You can still export it in Step 7.`);
-        breadcrumb('warn', `could not save the case archive: ${(e as Error).message}`);
-        capture(e, { category: 'launcher_error', title: 'Could not save the case archive', context: { step: 5 }, open: false });
       }
     } catch (e) {
       setError((e as Error).message);

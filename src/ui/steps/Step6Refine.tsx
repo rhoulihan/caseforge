@@ -9,12 +9,15 @@ import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 import { runPipeline } from '../../orchestrate';
 import { buildRunConfig, DEFAULT_TCO_INPUTS } from '../pipeline';
+import { persistCase } from '../../archive/persist';
+import { detectCandidates } from '../../anon/detect';
+import type { ArchiveVersion } from '../state';
 
 const TABS = ['Business Case', 'Sizing Brief', 'Technical Review', 'Claims Checklist'];
 const CHIPS = ['More concise', 'Executive tone', 'Emphasize DR resilience', 'Add risk framing'];
 
 export function Step6Refine() {
-  const { state, patch, getApiKey, setApiKey } = useWizard();
+  const { state, patch, getApiKey, setApiKey, launcher } = useWizard();
   const { capture, breadcrumb } = useErrors();
   const [active, setActive] = useState(0);
   const [instr, setInstr] = useState('');
@@ -40,6 +43,26 @@ export function Step6Refine() {
     setBusy(true);
     setError('');
     try {
+      const raw = instr.trim();
+      // The refine box is FREE TEXT — a name typed here that isn't in the map would pass the literal
+      // anonymizer through unchanged (count 0, no error) and leak to the LLM. So detect names locally
+      // first and block (fail-closed) if any aren't already in the approved map; the rep adds them in
+      // Step 3 or rephrases.
+      if (raw) {
+        const mapped = new Set(state.map.map((m) => m.phrase.toLowerCase()));
+        const unmapped = detectCandidates({ files: [], primitives: [{ kind: 'text', source: 'refine-instruction', text: raw }] }, state.config?.companyName ?? '').filter(
+          (d) => !mapped.has(d.phrase.toLowerCase()),
+        );
+        if (unmapped.length > 0) {
+          setError(`Your instruction may contain names not in the anonymization list: ${unmapped.map((d) => d.phrase).join(', ')}. Add them in Step 3 (Anonymize) or rephrase — otherwise they'd be sent to the AI.`);
+          return;
+        }
+      }
+      // Slug-anonymize the instruction BEFORE it reaches the LLM (the raw text never leaves the machine).
+      // Fail-closed: if the launcher can't anonymize, abort rather than risk sending a real name.
+      const slugged = raw ? (await launcher.anonymize(state.map, raw)).text : '';
+      // Replay prior refinements (already slugged) + this one, so wording changes accumulate (continuity).
+      const effective = [...state.refinementHistory.map((h) => h.slugged), slugged].filter(Boolean).join(' Then: ') || undefined;
       // Recompute with current settings — reuse the cached triage, apply the current discount, then rewrite prose.
       const cfg = buildRunConfig({
         state,
@@ -47,7 +70,7 @@ export function Step6Refine() {
         tcoInputs: state.tcoInputs ?? DEFAULT_TCO_INPUTS,
         claims: docModel.claims,
         preparedDate: docModel.preparedDate,
-        proseInstruction: instr.trim() || undefined,
+        proseInstruction: effective,
       });
       const next = await runPipeline(cfg);
       if (!next.docModel) {
@@ -56,8 +79,20 @@ export function Step6Refine() {
         breadcrumb('warn', `refine produced no docModel: ${next.error ?? 'blocked'}`);
         return;
       }
-      patch({ pipeline: next });
+      // Append a new content-package version (never overwrite) + log the refinement, then persist.
+      const now = new Date().toISOString();
+      const id = String(state.versions.length + 1).padStart(3, '0');
+      const version: ArchiveVersion = { id, createdAt: now, trigger: 'refine', discountPct: state.config?.discountPct ?? 0, docModel: next.docModel, rendered: next.rendered };
+      const versions = [...state.versions, version];
+      const refinementHistory = raw ? [...state.refinementHistory, { ts: now, instruction: raw, slugged, versionId: id }] : state.refinementHistory;
+      patch({ pipeline: next, versions, refinementHistory });
       setInstr('');
+      const saveErr = await persistCase(launcher, { ...state, pipeline: next, versions, refinementHistory });
+      if (saveErr) {
+        setError(`Refined, but this case could not be saved (${saveErr}). You can still export it in Step 7.`);
+        breadcrumb('warn', `could not save the refined case: ${saveErr}`);
+        capture(new Error(saveErr), { category: 'launcher_error', title: 'Could not save the refined case', context: { step: 6 }, open: false });
+      }
     } catch (e) {
       setError((e as Error).message);
       capture(e, { category: 'provider_error', title: 'Refine failed', context: { step: 6 } });
