@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChecklist } from './claims';
+import { buildChecklist, buildSizingClaims } from './claims';
 import { NORTHWIND_DOCMODEL } from './fixtures/northwind-docmodel';
 
 const cl = buildChecklist(NORTHWIND_DOCMODEL);
@@ -28,5 +28,29 @@ describe('buildChecklist', () => {
     expect(cl.summary.total).toBe(NORTHWIND_DOCMODEL.claims.length);
     expect(cl.summary.lowestConfidence).toContain('B1');
     expect(cl.summary.lowestConfidence).not.toContain('C1'); // C1 is high
+  });
+});
+
+describe('buildSizingClaims', () => {
+  const dm = NORTHWIND_DOCMODEL;
+  const claims = buildSizingClaims({ basis: dm.sizing.basis, consumed: dm.sizing.consumed, scenarios: dm.sizing.scenarios, tco: dm.tco });
+
+  it('synthesizes the authoritative sizing + TCO claims from the engine numbers', () => {
+    const byId = new Map(claims.map((c) => [c.id, c]));
+    expect(byId.get('sz-shards')!.value).toBe(dm.sizing.basis.shards); // 3
+    expect(byId.get('sz-shards')!.dependsOnSignals).toEqual(['cluster.shardCount']);
+    expect(byId.get('sz-hovcpu')!.dependsOnSignals).toEqual(['node.hoVcpu']);
+    expect(byId.get('sz-base-conservative')!.value).toBe(dm.sizing.scenarios[0]!.base); // 22
+    expect(byId.has('tco-onprem')).toBe(true);
+    expect(byId.get('tco-adb-warm')!.declaredSource?.confidence).toBe('high');
+  });
+
+  it('the checklist built from synthesized claims is non-empty and derives sizing confidence from coverage', () => {
+    // Reproduce the bug fix: a docModel whose ONLY claims are the synthesized ones still yields a full checklist.
+    const checklist = buildChecklist({ ...dm, claims });
+    expect(checklist.rows.length).toBe(claims.length);
+    expect(checklist.rows.length).toBeGreaterThan(0);
+    const shard = checklist.rows.find((r) => r.id === 'sz-shards')!;
+    expect(shard.confidence).toBe('high'); // cluster.shardCount coverage is high in the fixture
   });
 });

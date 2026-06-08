@@ -7,6 +7,7 @@ import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../engine/tco';
 import { applyDiscount, discountFactor } from '../engine/discount';
 import { coldRtoHours } from '../engine/dr';
+import { buildSizingClaims } from './claims';
 import { ENGINE_CONFIG } from '../engine/config';
 import { PALETTE } from '../charts/svg';
 import type { CostChartData } from '../charts/costChart';
@@ -208,6 +209,15 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     util: o.sizingInputs.util,
     assumptions: o.assumptions,
   };
+  const consumed = consumedEcpu(o.sizingInputs, 'workload');
+  const scenarios = buildSizingScenarios(o.sizingInputs, scenarioRates);
+  // Always synthesize the authoritative sizing + TCO claims from the engine numbers, so the claims
+  // checklist is never empty (even when the rep skipped cost research). Merge with any caller-supplied
+  // (researched) cost claims, deduped by id — synthesized win, which keeps the set stable when a refine
+  // passes the prior docModel.claims back in (the regenerated sz-/tco- claims replace, not duplicate).
+  const synthClaims = buildSizingClaims({ basis, consumed, scenarios, tco });
+  const synthIds = new Set(synthClaims.map((c) => c.id));
+  const claims = [...synthClaims, ...o.claims.filter((c) => !synthIds.has(c.id))];
   return {
     profileId: o.sufficiency.profileId,
     companyName: o.companyName,
@@ -216,16 +226,11 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     documentStatus: o.documentStatus,
     discountPct,
     listAdbAnnual,
-    sizing: {
-      basis,
-      consumed: consumedEcpu(o.sizingInputs, 'workload'),
-      scenarios: buildSizingScenarios(o.sizingInputs, scenarioRates),
-      dataCompressedGb: o.rates.dataCompressedGb,
-    },
+    sizing: { basis, consumed, scenarios, dataCompressedGb: o.rates.dataCompressedGb },
     tco,
     charts: { cost: buildCostChartData(o.companyName, tco), fiveYear: buildFiveYearChartData(tco) },
     sufficiency: o.sufficiency,
     prose: o.prose,
-    claims: o.claims,
+    claims,
   };
 }

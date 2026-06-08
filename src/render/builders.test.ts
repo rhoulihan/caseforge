@@ -158,4 +158,42 @@ describe('assembleDocModel', () => {
     expect(docModel.prose.businessCase.execSummary.length).toBeGreaterThan(0);
     expect(docModel.sizing.basis.assumptions.length).toBe(2);
   });
+
+  it('synthesizes the claims checklist from the engine numbers even when no claims are supplied', () => {
+    const dm = assembleDocModel({
+      companyName: 'Northwind',
+      targetPlatform: 'Oracle Autonomous Database',
+      preparedDate: '2026-06-05',
+      documentStatus: 'preliminary',
+      sizingInputs: NORTHWIND_SIZING,
+      assumptions: [],
+      rates,
+      tcoInputs: NORTHWIND,
+      sufficiency: NORTHWIND_DOCMODEL.sufficiency,
+      prose: NORTHWIND_DOCMODEL.prose,
+      claims: [], // the rep skipped cost research — the checklist must still populate
+    });
+    expect(dm.claims.length).toBeGreaterThan(0);
+    expect(dm.claims.some((c) => c.id === 'sz-shards')).toBe(true);
+    expect(dm.claims.some((c) => c.id === 'tco-onprem')).toBe(true);
+  });
+
+  it('dedups synthesized claims against caller-supplied ones by id (stable across a refine round-trip)', () => {
+    const opts2 = {
+      companyName: 'Northwind',
+      targetPlatform: 'Oracle Autonomous Database',
+      preparedDate: '2026-06-05',
+      documentStatus: 'preliminary' as const,
+      sizingInputs: NORTHWIND_SIZING,
+      assumptions: [],
+      rates,
+      tcoInputs: NORTHWIND,
+      sufficiency: NORTHWIND_DOCMODEL.sufficiency,
+      prose: NORTHWIND_DOCMODEL.prose,
+    };
+    const first = assembleDocModel({ ...opts2, claims: [] });
+    // Feed the prior claims back in (what a Refine regenerate does) — the count must not grow.
+    const second = assembleDocModel({ ...opts2, claims: first.claims });
+    expect(second.claims.length).toBe(first.claims.length);
+  });
 });
