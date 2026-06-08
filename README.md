@@ -24,6 +24,8 @@ Two invariants govern the whole tool:
 **v1 scope:** MongoDB → Oracle Autonomous Database, built behind a Source-Profile seam so other source databases can be added later.
 
 > **Using CaseForge as a sales rep?** You don't need any of the developer setup below — see the plain-English **[Sales Rep Guide](docs/USER-GUIDE.md)**: download, double-click, and walk the wizard. (The same guide ships inside every release zip as `Guide.md`.)
+>
+> **Download (latest release):** [Windows](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-windows-amd64.zip) · [Mac — Apple Silicon](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-darwin-arm64.zip) · [Mac — Intel](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-darwin-amd64.zip) · [Linux](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-linux-amd64.zip) · [Linux ARM](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-linux-arm64.zip) · [all releases](https://github.com/rhoulihan/caseforge/releases/latest)
 
 ## Features
 
