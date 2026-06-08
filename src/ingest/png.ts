@@ -1,8 +1,8 @@
 // Minimal, dependency-free PNG encoder. Wraps raw 8-bit samples into a valid PNG using *stored*
 // (uncompressed) zlib blocks — no compression library, no canvas, so it runs identically in Node and
-// the browser. Used to turn the raw pixel buffers pdf.js decodes out of a PDF into a real image file
-// that tesseract OCR + the redaction canvas can consume. Output is larger than a compressed PNG, but
-// these images are transient (OCR'd, optionally redacted, then discarded) and bounded by the caller.
+// the browser. Used to turn the raw pixel buffers pdf.js decodes out of a PDF into a real image file the
+// AI's vision model can read. Output is larger than a compressed PNG, but these images are bounded by the
+// caller.
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 

@@ -38,7 +38,6 @@ const state = {
   config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 15 },
   detected: [{ phrase: 'Acme Mutual', type: 'org', occurrences: 1, confidence: 1 }],
   map: [{ phrase: 'Acme Mutual', slug: 'CF_ORG_01' }],
-  imagesScanned: true,
   imagesReviewed: true,
   imageReviewKeys: ['1:deck.pdf#p1-img1'],
   imageAcknowledgedIds: ['1:deck.pdf#p1-img1'],

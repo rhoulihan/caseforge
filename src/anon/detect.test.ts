@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { detectCandidates, detectCandidatesInImage, mergeDetected, type DetectedPhrase } from './detect';
+import { detectCandidates, mergeDetected, type DetectedPhrase } from './detect';
 import type { EvidenceBundle } from '../ingest/types';
 
 function find(out: DetectedPhrase[], phrase: string): DetectedPhrase | undefined {
@@ -75,43 +75,23 @@ describe('detectCandidates', () => {
   });
 });
 
-describe('detectCandidatesInImage', () => {
-  it('detects PII from OCR text and tags it with the image source', () => {
-    const out = detectCandidatesInImage('Dashboard — Acme Corp · admin jane@acme.com · host db.prod.local', 'chart.png', 'Acme Corp');
-    const email = out.find((d) => d.phrase.includes('jane@acme.com'));
-    expect(email).toBeTruthy();
-    expect(email!.source).toBe('image');
-    expect(email!.imageSource).toBe('chart.png');
-    expect(out.some((d) => d.phrase.includes('db.prod.local'))).toBe(true);
-  });
-});
-
 describe('mergeDetected', () => {
-  const txt: DetectedPhrase[] = [{ phrase: 'Acme Corp', type: 'org', occurrences: 3, confidence: 0.9 }];
-  const img: DetectedPhrase[] = [
-    { phrase: 'acme corp', type: 'org', occurrences: 1, confidence: 0.6, source: 'image', imageSource: 'chart.png' }, // dup (case-insensitive)
-    { phrase: 'db.prod.local', type: 'host', occurrences: 2, confidence: 0.8, source: 'image', imageSource: 'chart.png' }, // image-only
+  const a: DetectedPhrase[] = [{ phrase: 'Acme Corp', type: 'org', occurrences: 3, confidence: 0.9 }];
+  const b: DetectedPhrase[] = [
+    { phrase: 'acme corp', type: 'org', occurrences: 1, confidence: 0.6 }, // dup (case-insensitive)
+    { phrase: 'db.prod.local', type: 'host', occurrences: 2, confidence: 0.8 }, // new phrase
   ];
-  it('dedupes case-insensitively (text wins its source), accumulates occurrences, keeps the new image-only phrase', () => {
-    const merged = mergeDetected(txt, img);
+  it('dedupes case-insensitively (first entry kept), accumulates occurrences, keeps the new phrase', () => {
+    const merged = mergeDetected(a, b);
     expect(merged).toHaveLength(2);
     const acme = merged.find((d) => d.phrase.toLowerCase() === 'acme corp')!;
-    expect(acme.phrase).toBe('Acme Corp'); // text entry kept
-    expect(acme.source).toBeUndefined(); // stayed text-sourced
+    expect(acme.phrase).toBe('Acme Corp'); // first entry kept verbatim
     expect(acme.occurrences).toBe(4); // 3 + 1
-    const host = merged.find((d) => d.phrase === 'db.prod.local')!;
-    expect(host.source).toBe('image'); // image-only phrase carries its badge
-    expect(host.imageSource).toBe('chart.png');
+    expect(merged.some((d) => d.phrase === 'db.prod.local')).toBe(true);
   });
   it('keeps the HIGHER confidence when a shared phrase appears in both lists', () => {
-    const lowTxt: DetectedPhrase[] = [{ phrase: 'Acme Corp', type: 'org', occurrences: 1, confidence: 0.5 }];
-    const highImg: DetectedPhrase[] = [{ phrase: 'acme corp', type: 'org', occurrences: 1, confidence: 0.95, source: 'image', imageSource: 'c.png' }];
-    expect(mergeDetected(lowTxt, highImg).find((d) => d.phrase.toLowerCase() === 'acme corp')!.confidence).toBe(0.95);
-  });
-  it('first list wins the source tag — image-first makes a shared phrase image-sourced (ordering contract)', () => {
-    const merged = mergeDetected(img, txt); // image list passed FIRST
-    const acme = merged.find((d) => d.phrase.toLowerCase() === 'acme corp')!;
-    expect(acme.source).toBe('image'); // image entry was first → its tag wins
-    expect(acme.occurrences).toBe(4); // still accumulates 1 + 3
+    const low: DetectedPhrase[] = [{ phrase: 'Acme Corp', type: 'org', occurrences: 1, confidence: 0.5 }];
+    const high: DetectedPhrase[] = [{ phrase: 'acme corp', type: 'org', occurrences: 1, confidence: 0.95 }];
+    expect(mergeDetected(low, high).find((d) => d.phrase.toLowerCase() === 'acme corp')!.confidence).toBe(0.95);
   });
 });

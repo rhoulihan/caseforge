@@ -12,8 +12,6 @@ export interface DetectedPhrase {
   type: PhraseType;
   occurrences: number;
   confidence: number; // 0..1, by detection method
-  source?: 'image'; // set when the phrase was found by OCR'ing an image (text-derived ones leave it unset)
-  imageSource?: string; // which image it came from (for the "from chart.png" badge), when source === 'image'
 }
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
@@ -115,16 +113,9 @@ export function detectCandidates(bundle: EvidenceBundle, companyName: string): D
   return out;
 }
 
-/** Run the same local detection over text OCR'd from a single image, tagging each result with its
- * image source so the rep sees where it came from. Pure; no LLM. */
-export function detectCandidatesInImage(ocrText: string, imageSource: string, companyName: string): DetectedPhrase[] {
-  const bundle: EvidenceBundle = { primitives: [{ kind: 'text', source: imageSource, text: ocrText }], files: [] };
-  return detectCandidates(bundle, companyName).map((d) => ({ ...d, source: 'image', imageSource }));
-}
-
 /** Merge candidate lists into one, deduped by case-insensitive phrase. The FIRST occurrence wins its
- * source tag (pass text-derived candidates first so a phrase seen in both stays "text"); occurrences
- * accumulate and the higher confidence is kept. Used to fold image-OCR findings into the rep's list. */
+ * source tag; occurrences accumulate and the higher confidence is kept. Used to merge freshly-detected
+ * candidates into the rep's existing list when more files are added. */
 export function mergeDetected(...lists: DetectedPhrase[][]): DetectedPhrase[] {
   const byKey = new Map<string, DetectedPhrase>();
   for (const d of lists.flat()) {

@@ -62,7 +62,7 @@ function imageMimeFor(nameOrExt: string, declared?: string): string | null {
 }
 
 /** Pull embedded raster images out of an OOXML container's media folder ((word|ppt|xl)/media/*),
- * so PII inside an embedded chart/screenshot is OCR-able downstream. Bounded + per-file crash-isolated. */
+ * so PII inside an embedded chart/screenshot is readable by the AI's vision model downstream. Bounded + per-file crash-isolated. */
 async function ooxmlMediaImages(zip: JSZip, name: string): Promise<Primitive[]> {
   const paths = Object.keys(zip.files)
     .filter((p) => OOXML_MEDIA.test(p))
@@ -188,7 +188,7 @@ export async function xlsxExtractor(name: string, bytes: Uint8Array, opts?: { ma
 }
 
 /** pdf -> a TextPrimitive with all page text merged, plus an ImagePrimitive per embedded raster image
- * (charts/screenshots) so PII baked into them is OCR-able downstream. `opts.maxImagePixels` (default
+ * (charts/screenshots) so PII baked into them is readable by the AI's vision model downstream. `opts.maxImagePixels` (default
  * MAX_PDF_IMAGE_PIXELS) bounds image size both for pdf.js decode and our re-encode; tests inject a small
  * cap. Assignable to AsyncExtractor (the extra param is optional). */
 export async function pdfExtractor(name: string, bytes: Uint8Array, opts?: { maxImagePixels?: number }): Promise<Primitive[]> {
@@ -210,7 +210,7 @@ export async function pdfExtractor(name: string, bytes: Uint8Array, opts?: { max
 }
 
 /** Pull embedded raster images out of a PDF: pdf.js decodes each image XObject to raw pixels, which we
- * re-encode to PNG so the same image is OCR-able + redactable downstream. Bounded + per-page/per-image
+ * re-encode to PNG so the AI's vision model can read it downstream. Bounded + per-page/per-image
  * crash-isolated. Known gaps: inline images, image masks, and JPXDecode-only images are not surfaced
  * (pdf.js paints them via ops we don't collect or in channel counts it doesn't expose). */
 async function pdfEmbeddedImages(pdf: Awaited<ReturnType<typeof getDocumentProxy>>, name: string, maxPixels: number): Promise<Primitive[]> {
@@ -263,7 +263,7 @@ interface MsgReaderLike {
 }
 
 /** ole(.msg) -> body TextPrimitive + subject/from/to KeyValuePrimitive + an ImagePrimitive per embedded/
- * attached IMAGE (so performance charts pasted into an email are OCR-able downstream). Non-msg ole -> []. */
+ * attached IMAGE (so performance charts pasted into an email are readable by the AI's vision model). Non-msg ole -> []. */
 export const msgExtractor: AsyncExtractor = async (name, bytes) => {
   try {
     const reader = new MsgReader(toArrayBuffer(bytes)) as unknown as MsgReaderLike;
@@ -294,7 +294,7 @@ export const msgExtractor: AsyncExtractor = async (name, bytes) => {
         const content = reader.getAttachment(att).content;
         if (content && content.length > 0 && content.length <= MAX_IMAGE_BYTES) {
           // Prefix the attachment index so two attachments sharing a filename get DISTINCT sources —
-          // downstream keys OCR/redaction by primitive identity, but a unique source keeps it unambiguous.
+          // downstream keys vision/extraction by primitive identity, but a unique source keeps it unambiguous.
           out.push({ kind: 'image', source: `${name}#att${images + 1}-${att.fileName ?? att.fileNameShort ?? 'image'}`, mime, bytes: content });
           images++;
         }
@@ -336,7 +336,7 @@ export const docxExtractor: AsyncExtractor = async (name, bytes) => {
     if (authors) text += `\ncomment authors: ${authors}`;
     text = text.trim();
     const out: Primitive[] = text ? [{ kind: 'text', source: name, text: cap(text) }] : [];
-    out.push(...(await ooxmlMediaImages(zip, name))); // embedded images (logos/charts) → OCR-able downstream
+    out.push(...(await ooxmlMediaImages(zip, name))); // embedded images (logos/charts) → readable by the AI's vision model downstream
     return out;
   } catch {
     return [];

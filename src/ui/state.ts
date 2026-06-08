@@ -55,8 +55,7 @@ export interface WizardState {
   detected: DetectedPhrase[];
   map: MapEntry[];
   anonBundle: EvidenceBundle | null; // bundle with text primitives replaced by slugs (what triage/LLM sees)
-  imagesScanned: boolean; // images OCR'd + their text folded into the candidate list (or none present)
-  imagesReviewed: boolean; // images OCR-redacted + reviewed by the rep (or none present)
+  imagesReviewed: boolean; // anonymize ran + images surfaced for review (or none present)
   // Per-image acknowledge gate (D2): every redacted image shown for review must be explicitly
   // acknowledged before Step 3 can advance. Keyed `${primitiveIndex}:${source}` off the FULL bundle
   // index (captured at anonymize), so the keys stay stable even if the rep later excludes an image.
@@ -101,7 +100,6 @@ export function initialWizardState(): WizardState {
     detected: [],
     map: [],
     anonBundle: null,
-    imagesScanned: false,
     imagesReviewed: false,
     imageReviewKeys: [],
     imageAcknowledgedIds: [],
@@ -120,9 +118,9 @@ export function initialWizardState(): WizardState {
 export function stepValidity(s: WizardState): Record<WizardStepId, boolean> {
   const setupOk = !!s.config && s.hasApiKey && s.config.companyName.trim().length > 0;
   const filesOk = !!s.bundle && s.bundle.primitives.length > 0;
-  // Images must be OCR-redacted + reviewed before they can reach vision (or there are none), and the rep
-  // must explicitly acknowledge each redaction (D2). imageReviewKeys is populated by anonymizeAll, so the
-  // gate bites in the real flow; a hand-built state with no keys leaves it vacuously satisfied.
+  // Images are sent to vision AS-IS (not scrubbed), so the rep must review + acknowledge each image that
+  // will be sent before advancing (D2). imageReviewKeys is populated by anonymizeAll (and trimmed when an
+  // image is excluded), so the gate bites in the real flow; a hand-built state with no keys is vacuous.
   const anonHasImages = !!s.anonBundle?.primitives.some((p) => p.kind === 'image');
   const allImagesAcked = s.imageReviewKeys.every((k) => s.imageAcknowledgedIds.includes(k));
   const anonOk = !!s.anonBundle && (!anonHasImages || (s.imagesReviewed && allImagesAcked));
