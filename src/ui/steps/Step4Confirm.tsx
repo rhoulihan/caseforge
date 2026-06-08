@@ -90,12 +90,12 @@ export function Step4Confirm() {
     setError('');
     const llm = createLLM(cfg.provider, { apiKey: getApiKey() });
     triage(bundle, MONGODB_PROFILE, llm, MODEL, state.map)
-      .then(({ result: tri }) => {
+      .then(({ result: tri, usage }) => {
         if (!alive) return;
         const suff = buildSufficiencyReport(tri, bundle.files, MONGODB_PROFILE);
         setReport(suff);
         setGate(buildGateData(suff, MONGODB_PROFILE));
-        patch({ triage: tri });
+        patch({ triage: tri, classifyUsage: usage });
       })
       .catch((e) => {
         if (!alive) return;
@@ -140,6 +140,8 @@ export function Step4Confirm() {
             <span class="cf-vbadge">{TIER_LABEL[report.verdict.tier] ?? report.verdict.tier}</span>
             <span>{report.verdict.headline}</span>
           </div>
+
+          {state.triage?.roleWarning ? <p class="cf-hint">⚠ {state.triage.roleWarning}</p> : null}
 
           <p class="cf-label" style="margin-top:14px">Evidence coverage · {report.verdict.requiredTotal} required signals</p>
           <table class="cf-maptable">

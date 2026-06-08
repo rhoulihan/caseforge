@@ -5,6 +5,7 @@
 
 import type { LLM, Usage, JsonSchema } from '../provider';
 import type { DocModel, BusinessCaseProse, SizingBriefProse, TechnicalReviewProse } from '../render/types';
+import type { QualContext, QualContextItem, QualContextCategory } from '../classify/qual-context';
 
 export interface ProseEnsemble {
   businessCase: BusinessCaseProse;
@@ -52,8 +53,32 @@ export const PROSE_SCHEMA: JsonSchema = {
 
 const k = (n: number): string => `$${Math.round(n / 1000)}K`;
 
-/** The slugs-only context: topology facts + the exact engine figures (the LLM must use, not invent). */
-export function buildProseContext(d: Omit<DocModel, 'prose' | 'claims'>): string {
+// Bound the qualitative context that reaches the prompt: at most 20 items, each truncated, so a noisy
+// extraction can't blow up the token count. Items are already slugged (de-anonymized at render).
+const QC_MAX_ITEMS = 20;
+const QC_MAX_CHARS = 200;
+
+function qualContextSection(qc: QualContext): string[] {
+  const items = qc.items.slice(0, QC_MAX_ITEMS);
+  if (items.length === 0) return [];
+  const groups: [string, QualContextCategory][] = [
+    ['CONCERNS', 'concern'],
+    ['OBJECTIONS', 'objection'],
+    ['TIMELINE', 'timeline'],
+    ['POSITIONING', 'positioning'],
+  ];
+  const line = (i: QualContextItem): string => `- ${i.text.slice(0, QC_MAX_CHARS)}${i.source ? ` [from ${i.source}]` : ''}`;
+  const lines: string[] = ['', 'CUSTOMER CONTEXT (the customer’s own words — weave in naturally; address each concern/objection and honor the timeline; never quote verbatim):'];
+  for (const [label, cat] of groups) {
+    const g = items.filter((i) => i.category === cat);
+    if (g.length) lines.push(`${label}:`, ...g.map(line));
+  }
+  return lines;
+}
+
+/** The slugs-only context: topology facts + the exact engine figures (the LLM must use, not invent),
+ *  plus any qualitative customer context (concerns/objections/timeline/positioning) to shape the prose. */
+export function buildProseContext(d: Omit<DocModel, 'prose' | 'claims'>, qualContext?: QualContext): string {
   const b = d.sizing.basis;
   const t = d.tco;
   return [
@@ -77,6 +102,7 @@ export function buildProseContext(d: Omit<DocModel, 'prose' | 'claims'>): string
     `SUFFICIENCY: ${d.sufficiency.verdict.tier} — ${d.sufficiency.verdict.headline}.`,
     'ASSUMPTIONS:',
     ...b.assumptions.map((a) => `- ${a}`),
+    ...(qualContext ? qualContextSection(qualContext) : []),
   ].join('\n');
 }
 
@@ -104,10 +130,12 @@ export async function generateProse(
   llm: LLM,
   model: string,
   instruction?: string,
+  qualContext?: QualContext,
 ): Promise<{ prose: ProseEnsemble; usage: Usage }> {
   const system =
-    'You are a senior solutions engineer writing three documents (business case, sizing brief, technical review) for a database migration. Write narrative prose only. The authoritative numbers are already computed and given below — reference the figures provided and do NOT invent different ones. Every field is required and must be a non-empty string. Reply as JSON matching the schema.';
-  const context = buildProseContext(docModel);
+    'You are a senior solutions engineer writing three documents (business case, sizing brief, technical review) for a database migration. Write narrative prose only. The authoritative numbers are already computed and given below — reference the figures provided and do NOT invent different ones. Every field is required and must be a non-empty string. Reply as JSON matching the schema.\n' +
+    'When a CUSTOMER CONTEXT section is present, tailor the deliverables to it: open businessCase.execSummary with the customer’s top concern and let businessCase.nextSteps honor any stated timeline; rebut each objection with the engine figures in businessCase.fullyLoadedComparison; name each concern and give the Oracle mitigation in technicalReview.riskAndMitigation; reflect the positioning in sizingBrief.workloadContext. Synthesize naturally — never quote the context verbatim. If no CUSTOMER CONTEXT is present, write general-purpose professional prose and invent no concerns.';
+  const context = buildProseContext(docModel, qualContext);
   // A refine instruction adjusts WORDING/emphasis only; the figures above stay authoritative.
   const content = instruction
     ? `${context}\n\nREFINEMENT REQUEST (adjust wording/emphasis only — keep every figure exactly as given): ${instruction}`

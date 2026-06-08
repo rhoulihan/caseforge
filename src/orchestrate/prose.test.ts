@@ -82,4 +82,33 @@ describe('generateProse', () => {
     expect(s.properties.sizingBrief.required).toHaveLength(4);
     expect(s.properties.technicalReview.required).toHaveLength(4);
   });
+
+  it('includes a CUSTOMER CONTEXT section only when qualitative context is provided', () => {
+    expect(buildProseContext(m)).not.toMatch(/CUSTOMER CONTEXT/);
+    const ctx = buildProseContext(m, {
+      items: [
+        { text: 'CF_ORG_01 must cut spend before year-end', source: 'thread.msg', category: 'concern' },
+        { text: 'go-live by Q3', source: 'thread.msg', category: 'timeline' },
+      ],
+    });
+    expect(ctx).toMatch(/CUSTOMER CONTEXT/);
+    expect(ctx).toContain('CONCERNS:');
+    expect(ctx).toContain('must cut spend');
+    expect(ctx).toContain('go-live by Q3');
+    expect(ctx).toContain('[from thread.msg]');
+  });
+
+  it('caps qualitative context at 20 items and truncates each to 200 chars', () => {
+    const items = Array.from({ length: 25 }, () => ({ text: 'x'.repeat(300), source: 's', category: 'concern' as const }));
+    const ctx = buildProseContext(m, { items });
+    expect((ctx.match(/^- x+/gm) ?? []).length).toBe(20); // 25 -> capped at 20
+    expect(ctx).not.toContain('x'.repeat(201)); // truncated to 200
+  });
+
+  it('passes qualitative context through generateProse into the prompt', async () => {
+    const cap = capturingLLM(JSON.stringify(m.prose));
+    await generateProse(m, cap.llm, 'm', undefined, { items: [{ text: 'CFO is watching cost', source: 'e.msg', category: 'concern' }] });
+    expect(cap.lastContent()).toContain('CUSTOMER CONTEXT');
+    expect(cap.lastContent()).toContain('CFO is watching cost');
+  });
 });
