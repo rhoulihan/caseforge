@@ -45,17 +45,20 @@ describe('buildSufficiencyReport — verdict tiers', () => {
     expect(r.whatToCollect).toHaveLength(0);
   });
 
-  it('(3) Northwind vision util (capped 0.70) -> directional-estimate, 3 util upgrades, 0 blocking', () => {
+  it('(3) Northwind vision util (capped 0.70) -> engineering-grade (a confident vision read clears the 0.70 floor), nothing to collect', () => {
     const utilVision = utilNative().map((b) => ({ ...b, confidence: 0.85, method: 'vision' as const }));
     const r = buildSufficiencyReport(triageOf([...scalarsSatisfied(), ...utilVision, ...storageSatisfied()]), [], MONGODB_PROFILE);
-    expect(r.verdict.tier).toBe('directional-estimate');
+    expect(r.verdict.tier).toBe('engineering-grade'); // vision cap 0.70 == engFloor → satisfied, not a perpetual directional
     expect(r.whatToCollect.filter((w) => w.severity === 'blocking')).toHaveLength(0);
-    expect(r.whatToCollect.filter((w) => w.severity === 'upgrade').map((w) => w.signalId).sort()).toEqual([
-      'util.dr',
-      'util.hoSec',
-      'util.primary',
-    ]);
-    expect(r.verdict.limitingSignals.sort()).toEqual(['util.dr', 'util.hoSec', 'util.primary']);
+    expect(r.whatToCollect.filter((w) => w.severity === 'upgrade')).toHaveLength(0);
+    expect(r.verdict.limitingSignals).toEqual([]);
+  });
+
+  it('(3b) all-vision required signals -> engineering-grade (an entirely image-sourced sizing still qualifies)', () => {
+    const visionAll = allRequiredSatisfied().map((b) => ({ ...b, confidence: 0.85, method: 'vision' as const }));
+    const r = buildSufficiencyReport(triageOf([...visionAll, ...storageSatisfied()]), [], MONGODB_PROFILE);
+    expect(r.verdict.tier).toBe('engineering-grade'); // mean of six 0.70s must clear engMean (guards the float cliff)
+    expect(r.verdict.requiredPartial).toBe(0);
   });
 
   it('(4) one required missing among satisfied -> blocked with that lone limiting signal', () => {
@@ -91,11 +94,11 @@ describe('buildSufficiencyReport — verdict tiers', () => {
   it('(6b) a single required signal just below the engineering floor caps the tier at directional', () => {
     const base = allRequiredSatisfied().filter((x) => x.signalId !== 'util.primary');
     const r = buildSufficiencyReport(
-      triageOf([...base, mk('util.primary', { avgPct: 0.18, peakPct: 0.45 }, 0.79, 'numeric-series'), ...storageSatisfied()]),
+      triageOf([...base, mk('util.primary', { avgPct: 0.18, peakPct: 0.45 }, 0.6, 'numeric-series'), ...storageSatisfied()]),
       [],
       MONGODB_PROFILE,
     );
-    expect(r.verdict.tier).toBe('directional-estimate'); // eff 0.79 < engFloor 0.80 -> partial
+    expect(r.verdict.tier).toBe('directional-estimate'); // eff 0.60 < engFloor 0.70 -> partial
     expect(r.verdict.limitingSignals).toEqual(['util.primary']);
   });
 });

@@ -99,13 +99,16 @@ export async function readArtifactImage(
   const res = await llm.complete({
     model,
     system:
-      `You are reading a customer artifact image (monitoring dashboard, intake form, or configuration screenshot). ` +
-      `Emit ONE entry in "panels" for EVERY visible panel or data field, using the exact panelLabel you see.\n` +
+      `You are reading a customer artifact image (monitoring dashboard, intake form, topology table, or ` +
+      `configuration screenshot). Read EVERYTHING — values live in plotted charts AND in table cells and ` +
+      `sentences. Emit ONE entry in "panels" for EVERY data point you can read, using the exact panelLabel.\n` +
       `- avgPeak panels (CPU/util/IOPS/ops/concurrency time-series): kind="avgPeak", avgPct and peakPct as 0-1 fractions. ` +
       `For a multi-panel dashboard return ONE entry per panel — never average across panels.\n` +
-      `- numeric count/size fields (e.g. "shards: 3"): kind="scalar", set numericValue.\n` +
+      `- numeric COUNTS stated anywhere — a label, a table cell, or a sentence: kind="scalar", set numericValue. ` +
+      `ALWAYS look for the cluster's shard / data-bearing replica-set count, e.g. "3 shards, each a primary" or ` +
+      `"Number of shards: 3" → signalId "cluster.shardCount", numericValue 3. Also node counts and data size.\n` +
       `- categorical labels (cluster tier like M80, edition): kind="enum", set strValue. Emit a tier code under ` +
-      `signalId "node.atlasTier" and do NOT convert it to a vCPU number.\n` +
+      `signalId "node.atlasTier" (just the code, e.g. "M80") and do NOT convert it to a vCPU number.\n` +
       `Use ONLY these signalIds (never invent one):\n${signalLines(schema, 'vision')}\n` +
       `In "qualContext", capture any customer concern, objection, deadline, or positioning statement visible as text. ` +
       `You only READ what is shown — never compute or guess. Set unused value fields to null.`,
@@ -173,9 +176,10 @@ export async function classifyText(
     system:
       `Extract sizing signals AND qualitative context from the text.\n` +
       `For signals, use ONLY these signalIds and set valueKind to match:\n${signalLines(schema, 'llm-text')}\n` +
-      `- scalar: set numericValue. enum: set strValue. avgPeak: set avgPct and peakPct as 0-1 fractions ` +
-      `(midpoint of a stated range for avg, the upper bound for peak). Emit an Atlas tier code (M80, …) under ` +
-      `signalId "node.atlasTier" as an enum; do NOT convert it to vCPU.\n` +
+      `- scalar: set numericValue. Always look for a stated shard / data-bearing replica-set count ` +
+      `(e.g. "3 shards" → cluster.shardCount=3) and node counts. enum: set strValue. avgPeak: set avgPct and ` +
+      `peakPct as 0-1 fractions (midpoint of a stated range for avg, the upper bound for peak). Emit an Atlas ` +
+      `tier code (just the code, e.g. "M80") under signalId "node.atlasTier" as an enum; do NOT convert it to vCPU.\n` +
       `Only extract values the text CLEARLY states — never infer or compute. Set unused value fields to null.\n` +
       `In "qualContext", extract customer concerns, objections, deadlines (timeline), and positioning statements ` +
       `a solutions engineer would use to frame a business case.`,

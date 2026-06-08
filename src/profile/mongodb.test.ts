@@ -57,8 +57,12 @@ describe('MONGODB_PROFILE signal schema', () => {
   it('defines a full set of method caps and tier floors', () => {
     const t = MONGODB_PROFILE.thresholds;
     expect(t.methodCap['numeric-series']).toBe(1);
-    expect(t.methodCap['vision']).toBeLessThan(t.engFloor);
+    // A confident vision read IS engineering-grade: its cap meets the floor (not below it).
+    expect(t.methodCap['vision']).toBeGreaterThanOrEqual(t.engFloor);
+    // Heuristic + assumption-default stay below the floor → they read as needs-confirmation.
+    expect(t.methodCap['heuristic']).toBeLessThan(t.engFloor);
     expect(t.methodCap['assumption-default']).toBeLessThan(t.engFloor);
     expect(t.engFloor).toBeGreaterThan(t.missingFloor);
+    expect(t.engMean).toBeLessThanOrEqual(t.engFloor); // an all-at-the-floor sizing still reaches engineering-grade
   });
 });

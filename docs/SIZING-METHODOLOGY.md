@@ -82,10 +82,12 @@ CaseForge never silently guesses. Each required signal is classified by how it w
 intake is graded:
 
 - **Blocked** — a required signal is missing; the report lists exactly what to ask the customer for.
-- **Directional estimate** — enough to size, but some inputs rest on assumptions or lower-confidence
-  evidence (e.g. a value read from a chart image). A signal that defaults to an assumption can never be
-  graded engineering-grade.
-- **Engineering-grade** — all required signals come from authoritative, native evidence.
+- **Directional estimate** — enough to size, but some required inputs rest on assumptions or fuzzy
+  (heuristic) evidence that sits below the engineering bar. A signal that defaults to an assumption can
+  never be graded engineering-grade.
+- **Engineering-grade** — every required signal is read with confidence at or above the bar, whether from
+  native structured data **or a confident read of a chart/screenshot**. A clear vision read of a value is
+  treated as engineering-grade — it is as good as reading the number off the source itself.
 
 Researched cost figures are capped at *medium* confidence, so a market-researched price can never be
 presented as authoritative without the rep confirming it.

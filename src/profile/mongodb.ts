@@ -323,7 +323,12 @@ export const MONGODB_PROFILE: SourceProfile = {
       'assumption-default': 0.5,
     },
     missingFloor: 0.2,
-    engFloor: 0.8,
-    engMean: 0.85,
+    // A vision read is capped at 0.70 (that is as good as reading a value off an image gets), so the
+    // engineering-grade floor is 0.70 — a confident vision-sourced signal IS engineering-grade, not a
+    // perpetual "directional". engMean sits a hair under 0.70 so an all-vision sizing still qualifies
+    // (the mean of six 0.70s drifts to 0.6999… in float). Heuristic (0.60) / assumption-default (0.50)
+    // stay below the floor, so a fuzzy or defaulted signal still reads as needs-confirmation.
+    engFloor: 0.7,
+    engMean: 0.69,
   },
 };
