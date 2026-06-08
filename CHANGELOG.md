@@ -17,6 +17,41 @@ every release below:
   map; the launcher substitutes real text for slugs *before* any AI call. The anonymized content
   is the only thing that ever leaves the machine.
 
+## [0.5.0] — 2026-06-08
+
+> This release closes a class of silent-default bugs on the sizing/cost path and simplifies the image
+> review. Its throughline is the determinism boundary's stricter cousin: **every value feeding the
+> sizing/cost/DR/research paths must be file-derived or rep-entered — never a silently substituted
+> constant.**
+
+### Changed
+
+- **On-disk storage is now a *required* sizing input.** `data.storageSizeGb` was promoted from
+  *recommended* to *required*, so a missing storage size now **blocks** the case at the §8.5 gate
+  instead of silently defaulting to a hardcoded **1000 GB** — a placeholder that previously flowed into
+  the dominant ADB storage cost line, the cold-DR RTO, and the cost-research prompt. The value is
+  threaded post-gate through the type system (out of `EcpuStorageRates`, which is now rate-only), so the
+  cost math cannot run without it. A storage figure the rep *types at the gate* is recorded as a flagged
+  assumption → the report grades **Directional**, never engineering-grade; storage *read from an
+  artifact* stays engineering-grade. The cost-research profile now sources topology + storage from the
+  **post-gate** merged bindings (no fabricated `?? 1 / ?? 8 / ?? 0` defaults; DR posture is omitted from
+  the prompt when unbound rather than hardcoded to "warm").
+- **Simplified Step-3 image review.** Each image keeps its single *send / exclude* toggle; the per-image
+  acknowledgement checkbox is gone, replaced by **one "images verified clean" checkbox** at the bottom
+  that the rep ticks before continuing (shown only when at least one image will be sent). The
+  per-image `imageReviewKeys` / `imageAcknowledgedIds` state collapses to a single `imagesVerifiedClean`
+  flag (archives from earlier versions load fine — it defaults to unset).
+
+### Fixed
+
+- **A rich Outlook `.msg` no longer drops its body prose.** When screenshots are pasted into a rich
+  Outlook compose, the prose often lives only in the **HTML** body. `msgExtractor` read only the
+  plain-text body, so stated topology — "3 shards", "Data size 45.8 TB", node/RAM counts — was silently
+  lost while the embedded screenshots were still classified (the case came back BLOCKED with no
+  indication why). The extractor now falls back to the HTML body via `htmlToText`; `data.storageSizeGb`
+  is now extractable from prose (`llm-text`) with TB→GB normalization; and `isNoise` no longer discards
+  a body that contains sizing facts just because it opens with a greeting or footer.
+
 ## [0.4.0] — 2026-06-07
 
 > Everything below landed on `main` after the `v0.3.0` tag. A local OCR image-redaction experiment was
