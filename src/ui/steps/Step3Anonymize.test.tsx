@@ -159,6 +159,33 @@ describe('Step3Anonymize — image redaction', () => {
     await screen.findByText(/region\(s\) blacked out/i); // redacted preview caption (rectCount = 2)
     await waitFor(() => expect(screen.getByTestId('reviewed').textContent).toBe('true'));
   });
+
+  it('requires acknowledging each redacted image before continuing (D2)', async () => {
+    function AckReadout() {
+      const { state } = useWizard();
+      return <span data-testid="ack">{`${state.imageReviewKeys.length}/${state.imageAcknowledgedIds.length}`}</span>;
+    }
+    render(
+      <ErrorProvider>
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }} launcher={mockLauncher}>
+          <Step3Anonymize />
+          <AckReadout />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    await screen.findByText('Acme Mutual');
+    fireEvent.click(screen.getByRole('button', { name: /Scan 1 image\(s\) for hidden text/i }));
+    await screen.findByText('db.prod.acme.local');
+    fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
+    await screen.findByText(/region\(s\) blacked out/i);
+    // a review key was captured; nothing acknowledged yet → the count prompt shows
+    await waitFor(() => expect(screen.getByTestId('ack').textContent).toBe('1/0'));
+    expect(screen.getByText(/0 of 1 image\(s\) acknowledged/i)).toBeTruthy();
+    // ticking the per-image acknowledge checkbox records it
+    fireEvent.click(screen.getByLabelText(/acknowledge deck/i));
+    await waitFor(() => expect(screen.getByTestId('ack').textContent).toBe('1/1'));
+    await screen.findByText(/All 1 image\(s\) reviewed/i);
+  });
 });
 
 describe('Step3Anonymize — image failure & multi-image paths', () => {

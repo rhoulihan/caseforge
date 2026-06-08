@@ -40,6 +40,8 @@ const state = {
   map: [{ phrase: 'Acme Mutual', slug: 'CF_ORG_01' }],
   imagesScanned: true,
   imagesReviewed: true,
+  imageReviewKeys: ['1:deck.pdf#p1-img1'],
+  imageAcknowledgedIds: ['1:deck.pdf#p1-img1'],
   triage: { bindings: [] },
   gateAnswers: [],
   confirmed: true,
@@ -78,6 +80,9 @@ describe('archive serialize/deserialize', () => {
     expect(loaded.config!.discountPct).toBe(15);
     expect(loaded.map).toEqual(state.map);
     expect(loaded.confirmed).toBe(true);
+    // The per-image acknowledge state round-trips (so a reopened case stays advance-valid)
+    expect(loaded.imageReviewKeys).toEqual(['1:deck.pdf#p1-img1']);
+    expect(loaded.imageAcknowledgedIds).toEqual(['1:deck.pdf#p1-img1']);
 
     // Original uploaded files round-trip (the archive's sources/), names + bytes intact
     expect(loaded.rawFiles!.map((f) => f.name)).toEqual(['sizing.xlsx', 'deck.pdf']);
