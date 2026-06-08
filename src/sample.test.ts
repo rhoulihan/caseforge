@@ -42,7 +42,8 @@ describe('northwind-demo sample fixture', () => {
   it('binds the required sizing signals from the metric/value topology + utilization (not blocked)', async () => {
     // Reproduces the rep flow: the long-format topology.csv must bind shards/vCPU (heuristics, no LLM).
     const bundle = await ingestAsync([load('topology.csv'), load('cpu-utilization.csv'), load('customer-email.txt')], BINARY_EXTRACTORS);
-    const report = buildSufficiencyReport(await triage(bundle, MONGODB_PROFILE), bundle.files, MONGODB_PROFILE);
+    const { result } = await triage(bundle, MONGODB_PROFILE);
+    const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
     const value = (id: string): unknown => report.coverage.find((c) => c.signalId === id)?.value;
     expect(value('cluster.shardCount')).toBe(3);
     expect(value('node.hoVcpu')).toBe(32);

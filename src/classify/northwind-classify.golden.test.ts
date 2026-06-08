@@ -5,7 +5,7 @@ import { MONGODB_PROFILE } from '../profile/mongodb';
 import { NORTHWIND_SIZING } from '../engine/fixtures/northwind-sizing';
 import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import type { LLM } from '../provider';
-import type { EvidenceBundle, ImagePrimitive, KeyValuePrimitive, TablePrimitive } from '../ingest/types';
+import type { EvidenceBundle, ImagePrimitive, KeyValuePrimitive, TablePrimitive, TextPrimitive } from '../ingest/types';
 
 // The rep supplied topology + storage as text, but only Ops-Manager chart SCREENSHOTS for CPU.
 const topology: KeyValuePrimitive = {
@@ -21,12 +21,13 @@ const topology: KeyValuePrimitive = {
 };
 const img = (source: string): ImagePrimitive => ({ kind: 'image', source, mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
 
-// A vision LLM that reads each chart in order to the matching util signal (mocked, deterministic).
+// A vision LLM that reads each chart (now ARTIFACT_SCHEMA shape) to the matching util signal. The role
+// is taken from the panelLabel (primary/secondary/dr), so assignRoles honors it without the heuristic.
 function queuedVisionMock(): LLM {
   const responses = [
-    JSON.stringify({ signalId: 'util.primary', avgPct: 0.18, peakPct: 0.45, confidence: 0.85 }),
-    JSON.stringify({ signalId: 'util.hoSec', avgPct: 0.12, peakPct: 0.35, confidence: 0.85 }),
-    JSON.stringify({ signalId: 'util.dr', avgPct: 0.08, peakPct: 0.2, confidence: 0.85 }),
+    JSON.stringify({ panels: [{ kind: 'avgPeak', panelLabel: 'System CPU — primary', signalId: 'util.primary', avgPct: 0.18, peakPct: 0.45, numericValue: null, strValue: null, confidence: 0.85 }], qualContext: [] }),
+    JSON.stringify({ panels: [{ kind: 'avgPeak', panelLabel: 'Secondary CPU', signalId: 'util.hoSec', avgPct: 0.12, peakPct: 0.35, numericValue: null, strValue: null, confidence: 0.85 }], qualContext: [] }),
+    JSON.stringify({ panels: [{ kind: 'avgPeak', panelLabel: 'DR CPU', signalId: 'util.dr', avgPct: 0.08, peakPct: 0.2, numericValue: null, strValue: null, confidence: 0.85 }], qualContext: [] }),
   ];
   let i = 0;
   return {
@@ -59,7 +60,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
         { name: 'dr-cpu.png', type: 'png', ok: true },
       ],
     };
-    const result = await triage(bundle, MONGODB_PROFILE, queuedVisionMock(), 'claude-opus-4-8');
+    const { result } = await triage(bundle, MONGODB_PROFILE, queuedVisionMock(), 'claude-opus-4-8');
     const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
 
     expect(report.verdict.tier).toBe('directional-estimate');
@@ -81,7 +82,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
         { name: 'metrics.csv', type: 'csv', ok: true },
       ],
     };
-    const result = await triage(bundle, MONGODB_PROFILE); // no llm — the heuristics-only core path
+    const { result } = await triage(bundle, MONGODB_PROFILE); // no llm — the heuristics-only core path
     const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
 
     expect(report.verdict.tier).toBe('engineering-grade');
@@ -99,5 +100,53 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
     expect(ceilings(22)).toEqual({ x2: 44, x3: 66 });
     expect(baseFor(peak, avg, 3)).toBe(18);
     expect(ceilings(18)).toEqual({ x2: 36, x3: 54 });
+  });
+
+  it('the motivating case: a single .msg whose data is ONLY in embedded images + email text -> directional, not BLOCKED', async () => {
+    // One artifact image carries the intake-form scalars (shards, tier) AND a 3-node CPU dashboard; the
+    // email body carries a customer concern. Vision reads the image; classifyText reads the (slugged) body.
+    const emailBody: TextPrimitive = { kind: 'text', source: 'thread.msg', text: 'CF_ORG_01 needs payback under two years' };
+    const llm: LLM = {
+      async complete(opts) {
+        const isImage = opts.messages.some((m) => (m.images?.length ?? 0) > 0);
+        if (isImage) {
+          return {
+            text: JSON.stringify({
+              panels: [
+                { kind: 'scalar', panelLabel: 'Number of shards', signalId: 'cluster.shardCount', numericValue: 3, strValue: null, avgPct: null, peakPct: null, confidence: 0.9 },
+                { kind: 'enum', panelLabel: 'Cluster tier', signalId: 'node.atlasTier', strValue: 'M80', numericValue: null, avgPct: null, peakPct: null, confidence: 0.9 },
+                { kind: 'avgPeak', panelLabel: 'System CPU node-1', signalId: 'util.primary', avgPct: 0.35, peakPct: 0.9, numericValue: null, strValue: null, confidence: 0.85 },
+                { kind: 'avgPeak', panelLabel: 'System CPU node-2', signalId: 'util.primary', avgPct: 0.2, peakPct: 0.5, numericValue: null, strValue: null, confidence: 0.85 },
+                { kind: 'avgPeak', panelLabel: 'System CPU node-3', signalId: 'util.primary', avgPct: 0.1, peakPct: 0.3, numericValue: null, strValue: null, confidence: 0.85 },
+              ],
+              qualContext: [{ text: 'CF_ORG_01 needs payback under two years', category: 'concern' }],
+            }),
+            usage: { inputTokens: 1, outputTokens: 1 },
+            raw: {},
+          };
+        }
+        return { text: JSON.stringify({ bindings: [], qualContext: [{ text: 'CF_ORG_01 needs payback under two years', category: 'concern' }] }), usage: { inputTokens: 1, outputTokens: 1 }, raw: {} };
+      },
+    };
+    const bundle: EvidenceBundle = {
+      primitives: [img('embedded-0.png'), emailBody],
+      files: [
+        { name: 'embedded-0.png', type: 'png', ok: true },
+        { name: 'thread.msg', type: 'msg', ok: true },
+      ],
+    };
+    const { result } = await triage(bundle, MONGODB_PROFILE, llm, 'claude-opus-4-8');
+    const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
+
+    expect(report.verdict.tier).toBe('directional-estimate'); // was BLOCKED (5/6 missing) before this work
+    const { inputs, missing } = toSizingInputs(result.bindings, MONGODB_PROFILE);
+    expect(missing).toEqual([]);
+    expect(inputs!.shards).toBe(3);
+    expect(inputs!.hoVcpu).toBe(32); // M80 -> 32 via the engine tier table (NOT emitted by the LLM)
+    expect(inputs!.drVcpu).toBe(32); // assumed same tier as home
+    expect(inputs!.util.primary).toEqual({ avgPct: 0.35, peakPct: 0.9 }); // highest-load node -> primary
+    // qualitative context captured (and slugged) for the deliverables
+    expect(result.qualContext!.items.some((i) => /payback/.test(i.text))).toBe(true);
+    expect(result.roleWarning).toBeTruthy(); // node-labeled panels were role-assigned by load
   });
 });

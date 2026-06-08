@@ -73,6 +73,21 @@ describe('readArtifactImage', () => {
     expect(qualContext.items[0]).toEqual({ text: 'CF_ORG_01 is worried about migration cost', source: 'dash.png', category: 'concern' });
   });
 
+  it('drops panels whose value field is null (Number(null) must not bind a {0,0} avgPeak or a 0 scalar)', async () => {
+    const llm = fixedLLM(
+      JSON.stringify({
+        panels: [
+          { kind: 'avgPeak', panelLabel: 'iops', signalId: 'disk.iops', avgPct: null, peakPct: null, numericValue: null, strValue: null, confidence: 0.8 },
+          { kind: 'scalar', panelLabel: 'shards', signalId: 'cluster.shardCount', numericValue: null, strValue: null, avgPct: null, peakPct: null, confidence: 0.8 },
+          { kind: 'scalar', panelLabel: 'CPU', signalId: 'util.primary', numericValue: 5, strValue: null, avgPct: null, peakPct: null, confidence: 0.8 }, // util panel with null avg/peak
+        ],
+        qualContext: [],
+      }),
+    );
+    const { bindings } = await readArtifactImage(llm, img, schema, 'm');
+    expect(bindings).toHaveLength(0); // all three dropped — no bogus zero-valued bindings
+  });
+
   it('returns usage and survives a non-JSON response', async () => {
     const ok = await readArtifactImage(fixedLLM('{"panels":[],"qualContext":[]}'), img, schema, 'm');
     expect(ok.usage).toEqual({ inputTokens: 7, outputTokens: 3 });

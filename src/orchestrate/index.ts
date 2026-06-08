@@ -85,13 +85,14 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
 
   // 1. Classify (LLM optional — heuristics-only when no llm). Reuse a caller-precomputed triage if
   //    given (e.g. the UI ran it for the sufficiency/gate) to avoid a second LLM-classify pass.
-  //    triage's own LLM usage is NOT surfaced by its API; record a visibility checkpoint either way.
-  const tri = config.triage ?? (await triage(config.bundle, config.profile, config.llm, model));
+  //    triage now returns its LLM usage, but wiring it into the budget is deferred to PR-D
+  //    (RunConfig.classifyUsage); record a visibility checkpoint either way for now.
+  const tri = config.triage ?? (await triage(config.bundle, config.profile, config.llm, model)).result;
   if (config.triage) {
     recordSkipped(budget, 'classify', 'classify reused from caller (not re-run; LLM usage counted by caller)');
     fireCheckpoint();
   } else if (config.llm) {
-    recordSkipped(budget, 'classify', 'classify LLM usage is not surfaced by the triage API (not counted)');
+    recordSkipped(budget, 'classify', 'classify LLM usage is returned by triage but not yet counted here (wired in PR-D)');
     fireCheckpoint();
   }
 

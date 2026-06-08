@@ -1,16 +1,21 @@
 // The classify orchestrator (spec §7): heuristics first; escalate ONLY the unresolved
-// (images -> vision, ambiguous prose -> llm-text) to the injected LLM; merge to one binding per
-// signal by deterministic trust-rank. Deterministic given a deterministic LLM (omit llm = the
-// no-LLM core path). toSizingInputs assembles the engine's SizingInputs via engineSlot, and NEVER
-// invents a value — a missing required signal yields no inputs.
+// (images -> readArtifactImage, text/ambiguous prose -> classifyText) to the injected LLM; merge to one
+// binding per signal by deterministic trust-rank. Deterministic given a deterministic LLM (omit llm = the
+// no-LLM core path). Also mines qualitative deliverable context alongside signals, synthesizes vCPU from an
+// Atlas tier (engine table-lookup — the LLM only reads the tier string), and returns the LLM token usage so
+// the orchestrator can budget the classify stage. toSizingInputs assembles SizingInputs via engineSlot and
+// NEVER invents — a missing required signal yields no inputs.
 
 import type { EvidenceBundle } from '../ingest/types';
 import type { SourceProfile, DerivationMethod } from '../profile/types';
 import type { SizingInputs, RoleUtil } from '../engine/types';
-import type { LLM } from '../provider';
+import type { LLM, Usage } from '../provider';
 import type { BindingResult, PrimitiveClassification, TriageResult } from './types';
 import { classifyTable, bindNumericSeries, bindTableScalars, bindKeyValueTable, bindKeyValue, isNoise } from './heuristics';
-import { readChartImage, classifyProse } from './llm';
+import { readArtifactImage, classifyText } from './llm';
+import { emptyQualContext, mergeQualContexts, type QualContext } from './qual-context';
+import { tierToVcpu } from './tier-lookup';
+import { expandEntries, orderedForward, type MapEntry } from '../anon/mapping';
 
 // Higher = more trusted. manual = rep-confirmed measurement; assumption-default = a guess.
 const TRUST: Record<DerivationMethod, number> = {
@@ -37,15 +42,66 @@ export function mergeBindings(candidates: BindingResult[]): BindingResult {
   )[0]!;
 }
 
+/** A synchronous, in-TS literal replacer mirroring the Go launcher (longest-phrase-first over expanded
+ *  variants). Used to re-anonymize image-derived qualitative text before it can reach the LLM/output —
+ *  the launcher remains authoritative; this is the best-effort backstop for vision-lifted strings. */
+function makeSlugger(map: MapEntry[]): (s: string) => string {
+  const entries = orderedForward(expandEntries(map)).filter((e) => e.phrase.length > 0);
+  return (text: string): string => {
+    let out = text;
+    for (const e of entries) out = out.split(e.phrase).join(e.slug);
+    return out;
+  };
+}
+
+const isAuthoritative = (m: DerivationMethod): boolean => m === 'keyvalue' || m === 'numeric-series' || m === 'table-lookup' || m === 'manual';
+
+/**
+ * If an Atlas tier was read (signal `node.atlasTier`), resolve it to a vCPU count via the engine table and
+ * synthesize node.hoVcpu / node.drVcpu (method 'table-lookup'). The LLM only emitted the tier STRING — the
+ * number is computed here, preserving the determinism boundary. Any HALLUCINATED vision scalar for those
+ * slots is dropped so it can't survive the merge; an existing authoritative binding (keyvalue/series) is
+ * left to win and no synthetic value is added. Returns the new candidate pool. Unknown tier -> no change
+ * (the signal stays missing -> the gate asks for the vCPU).
+ */
+function applyTierSynthesis(candidates: BindingResult[]): BindingResult[] {
+  // Pick the highest-trust tier reading (consistent with mergeBindings) so two disagreeing sources
+  // (e.g. a vision M80 vs an llm-text M60) resolve to the same value the surviving binding will show.
+  const tier = candidates
+    .filter((c) => c.signalId === 'node.atlasTier')
+    .sort((a, b) => TRUST[b.method] - TRUST[a.method] || b.confidence - a.confidence)[0];
+  if (!tier || typeof tier.value !== 'string') return candidates;
+  const vcpu = tierToVcpu(tier.value);
+  if (vcpu === undefined) return candidates;
+  // Drop hallucinated vision scalars for the slots we are about to fill authoritatively.
+  const out = candidates.filter((c) => !((c.signalId === 'node.hoVcpu' || c.signalId === 'node.drVcpu') && c.method === 'vision'));
+  const hasAuthoritative = (id: string): boolean => out.some((c) => c.signalId === id && isAuthoritative(c.method));
+  if (!hasAuthoritative('node.hoVcpu')) {
+    out.push({ signalId: 'node.hoVcpu', value: vcpu, confidence: 1, method: 'table-lookup', evidence: tier.evidence, note: 'derived from the Atlas tier via the vCPU lookup table' });
+  }
+  if (!hasAuthoritative('node.drVcpu')) {
+    out.push({ signalId: 'node.drVcpu', value: vcpu, confidence: 1, method: 'table-lookup', evidence: tier.evidence, note: 'assumed same tier as the home region — verify at the gate if the DR tier differs' });
+  }
+  return out;
+}
+
 export async function triage(
   bundle: EvidenceBundle,
   profile: SourceProfile,
   llm?: LLM,
   model = 'claude-opus-4-8',
-): Promise<TriageResult> {
+  anonMap?: MapEntry[],
+): Promise<{ result: TriageResult; usage: Usage }> {
   const schema = profile.signalSchema;
-  const candidates: BindingResult[] = [];
+  let candidates: BindingResult[] = [];
   const inventory: PrimitiveClassification[] = [];
+  const usage: Usage = { inputTokens: 0, outputTokens: 0 };
+  let qualContext: QualContext = emptyQualContext();
+  const slugger = anonMap && anonMap.length > 0 ? makeSlugger(anonMap) : undefined;
+  const addUsage = (u: Usage): void => {
+    usage.inputTokens += u.inputTokens;
+    usage.outputTokens += u.outputTokens;
+  };
 
   for (const p of bundle.primitives) {
     if (isNoise(p)) {
@@ -62,10 +118,20 @@ export async function triage(
       got.push(...bindKeyValue(p, schema));
     } else if (p.kind === 'text') {
       role = 'prose';
-      if (llm) got.push(...(await classifyProse(llm, p, schema, model)));
+      if (llm) {
+        const r = await classifyText(llm, p, schema, model);
+        got.push(...r.bindings);
+        addUsage(r.usage);
+        qualContext = mergeQualContexts(qualContext, r.qualContext);
+      }
     } else if (p.kind === 'image') {
       role = 'chart';
-      if (llm) got.push(...(await readChartImage(llm, p, schema, model)));
+      if (llm) {
+        const r = await readArtifactImage(llm, p, schema, model, slugger);
+        got.push(...r.bindings);
+        addUsage(r.usage);
+        qualContext = mergeQualContexts(qualContext, r.qualContext);
+      }
     }
     candidates.push(...got);
     inventory.push({
@@ -77,6 +143,16 @@ export async function triage(
     });
   }
 
+  // Atlas tier -> vCPU (deterministic, engine table). Must run over the full candidate pool.
+  candidates = applyTierSynthesis(candidates);
+
+  // Surface a warning when any CPU-util panel role was assigned by the load/positional heuristic (D1).
+  const heuristicRoleCount = candidates.filter((c) => c.signalId.startsWith('util.') && /heuristic/i.test(c.note ?? '')).length;
+  const roleWarning =
+    heuristicRoleCount > 0
+      ? `${heuristicRoleCount} CPU-utilization panel(s) had no role label — primary/HA/DR were assigned by load. Verify the node topology at the gate.`
+      : undefined;
+
   const bySignal = new Map<string, BindingResult[]>();
   for (const c of candidates) {
     const list = bySignal.get(c.signalId);
@@ -84,7 +160,8 @@ export async function triage(
     else bySignal.set(c.signalId, [c]);
   }
   const bindings = [...bySignal.values()].map(mergeBindings);
-  return { profileId: profile.id, inventory, bindings };
+  const result: TriageResult = { profileId: profile.id, inventory, bindings, qualContext, ...(roleWarning ? { roleWarning } : {}) };
+  return { result, usage };
 }
 
 /** Assemble SizingInputs from required-signal bindings via engineSlot. Never invents — missing required => no inputs. */

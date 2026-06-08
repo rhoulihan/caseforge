@@ -89,8 +89,8 @@ export function Step4Confirm() {
     setLoading(true);
     setError('');
     const llm = createLLM(cfg.provider, { apiKey: getApiKey() });
-    triage(bundle, MONGODB_PROFILE, llm, MODEL)
-      .then((tri) => {
+    triage(bundle, MONGODB_PROFILE, llm, MODEL, state.map)
+      .then(({ result: tri }) => {
         if (!alive) return;
         const suff = buildSufficiencyReport(tri, bundle.files, MONGODB_PROFILE);
         setReport(suff);

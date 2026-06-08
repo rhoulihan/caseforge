@@ -1,7 +1,7 @@
 // Step 3 · Anonymize — detect sensitive phrases LOCALLY (no LLM), let the rep review/edit the
-// fail-closed map, then replace real text with slugs via the launcher BEFORE any AI call. Only TEXT
-// primitives are sent to the LLM during triage (classifyProse) / vision (readChartImage); tables and
-// keyvalues are bound by local heuristics, so anonymizing text primitives is what protects privacy.
+// fail-closed map, then replace real text with slugs via the launcher BEFORE any AI call. Text and image
+// primitives are sent to the LLM during triage (classifyText) / vision (readArtifactImage); tables and
+// keyvalues are bound by local heuristics, so anonymizing text + redacting images is what protects privacy.
 
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
