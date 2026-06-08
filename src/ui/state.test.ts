@@ -36,6 +36,13 @@ describe('stepValidity', () => {
     expect(stepValidity(withSetup({ bundle, anonBundle: withImage, imagesReviewed: true }))[3]).toBe(true); // reviewed → unblocked
     expect(stepValidity(withSetup({ bundle, anonBundle: bundle, imagesReviewed: false }))[3]).toBe(true); // text-only anonBundle needs no image review
   });
+  it('per-image acknowledge gate: every review key must be acknowledged to advance (D2)', () => {
+    const withImage: EvidenceBundle = { files: [], primitives: [{ kind: 'image', source: 'c.png', mime: 'image/png', bytes: new Uint8Array([1]) }] };
+    const base = { bundle, anonBundle: withImage, imagesReviewed: true, imageReviewKeys: ['0:c.png'] };
+    expect(stepValidity(withSetup({ ...base, imageAcknowledgedIds: [] }))[3]).toBe(false); // reviewed but not acknowledged
+    expect(stepValidity(withSetup({ ...base, imageAcknowledgedIds: ['0:c.png'] }))[3]).toBe(true); // acknowledged → unblocked
+    expect(stepValidity(withSetup({ ...base, imageAcknowledgedIds: ['9:other.png'] }))[3]).toBe(false); // a stale/other ack does not count
+  });
 });
 
 describe('maxReachableStep', () => {

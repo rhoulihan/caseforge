@@ -60,7 +60,7 @@ export function Step3Anonymize() {
   // Back-nav recovery: if we remounted with the reviewed flag set but no local previews to show,
   // the review panel would be empty + unusable — force a re-scan so the rep can verify redactions.
   useEffect(() => {
-    if (state.imagesReviewed && imgReview.length === 0) patch({ imagesReviewed: false });
+    if (state.imagesReviewed && imgReview.length === 0) patch({ imagesReviewed: false, imageReviewKeys: [], imageAcknowledgedIds: [] });
   }, [state.imagesReviewed, imgReview.length, patch]);
 
   // Free preview object URLs when they're replaced (re-scan) or the step unmounts.
@@ -146,7 +146,9 @@ export function Step3Anonymize() {
       setRedactedPrims(primitives);
       setImgReview(review);
       setExcluded(new Set());
-      patch({ anonBundle, imagesReviewed: true });
+      // Each redacted image must be acknowledged before Step 3 advances (D2). Capture the stable review
+      // keys and clear prior acknowledgements (this is a fresh redaction the rep must re-review).
+      patch({ anonBundle, imagesReviewed: true, imageReviewKeys: review.map((r) => `${r.id}:${r.source}`), imageAcknowledgedIds: [] });
     } catch (e) {
       review.forEach((r) => URL.revokeObjectURL(r.url)); // don't leak previews created before the throw
       setError((e as Error).message);
@@ -166,6 +168,14 @@ export function Step3Anonymize() {
     setExcluded(next);
     patch({ anonBundle: { files: state.anonBundle.files, primitives: redactedPrims.filter((p, i) => p.kind !== 'image' || !next.has(i)) }, imagesReviewed: true });
   }
+
+  // D2: the rep attests they reviewed this redaction. Keyed by the stable primitive index + source.
+  function toggleAcknowledge(id: number, source: string): void {
+    const key = `${id}:${source}`;
+    const acked = state.imageAcknowledgedIds.includes(key);
+    patch({ imageAcknowledgedIds: acked ? state.imageAcknowledgedIds.filter((k) => k !== key) : [...state.imageAcknowledgedIds, key] });
+  }
+  const isAcked = (r: ImgReview): boolean => state.imageAcknowledgedIds.includes(`${r.id}:${r.source}`);
 
   const imageCount = state.bundle?.primitives.filter((p) => p.kind === 'image').length ?? 0;
   const needsScan = imageCount > 0 && !state.imagesScanned; // images must be OCR'd into the list first
@@ -260,7 +270,7 @@ export function Step3Anonymize() {
             <>
               <div class="cf-imggrid">
                 {imgReview.map((r) => (
-                  <figure key={r.id} class={`cf-imgcard${excluded.has(r.id) ? ' excluded' : ''}`}>
+                  <figure key={r.id} class={`cf-imgcard${excluded.has(r.id) ? ' excluded' : ''}${isAcked(r) ? '' : ' unacked'}`}>
                     <img src={r.url} alt={`redacted preview of ${r.source}`} />
                     <figcaption>
                       <span class="cf-muted">{r.source}</span>
@@ -269,11 +279,21 @@ export function Step3Anonymize() {
                       <label>
                         <input type="checkbox" checked={!excluded.has(r.id)} onChange={() => toggleExclude(r.id)} /> send this image to the AI
                       </label>
+                      <label>
+                        <input type="checkbox" aria-label={`acknowledge ${r.source}`} checked={isAcked(r)} onChange={() => toggleAcknowledge(r.id, r.source)} /> I have reviewed this redaction
+                      </label>
                     </figcaption>
                   </figure>
                 ))}
               </div>
-              <p class="cf-ok">✓ Images reviewed. Click Next.</p>
+              {(() => {
+                const acked = imgReview.filter(isAcked).length;
+                return acked < imgReview.length ? (
+                  <p class="cf-hint">{acked} of {imgReview.length} image(s) acknowledged — review each redaction and tick “I have reviewed this redaction” before continuing.</p>
+                ) : (
+                  <p class="cf-ok">✓ All {imgReview.length} image(s) reviewed. Click Next.</p>
+                );
+              })()}
             </>
           )}
         </div>
