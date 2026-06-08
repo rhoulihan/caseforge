@@ -24,10 +24,18 @@ const files: FileReport[] = [
 ];
 const full: EvidenceBundle = { primitives: [topology, utilTable], files };
 const topologyOnly: EvidenceBundle = { primitives: [topology], files: [files[0]!] };
+const noStorageTopology: KeyValuePrimitive = { kind: 'keyvalue', source: 'topology.txt', pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16' } };
+const utilNoStorage: EvidenceBundle = { primitives: [noStorageTopology, utilTable], files };
 
 function Readout() {
   const { state } = useWizard();
-  return <span data-testid="confirmed">{String(state.confirmed)}</span>;
+  return (
+    <>
+      <span data-testid="confirmed">{String(state.confirmed)}</span>
+      {/* test-only: gateAnswers serialized to the DOM for assertion; Readout is never rendered in production */}
+      <span data-testid="answers">{JSON.stringify(state.gateAnswers)}</span>
+    </>
+  );
 }
 
 function setup(anonBundle: EvidenceBundle) {
@@ -59,5 +67,17 @@ describe('Step4Confirm', () => {
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await screen.findByText(/still blocked/i);
     expect(screen.getByTestId('confirmed').textContent).toBe('false');
+  });
+
+  it('records a typed storage figure as a flagged assumption (confirmed:false), then proceeds', async () => {
+    setup(utilNoStorage);
+    await screen.findByText('BLOCKED'); // storage missing -> blocked until entered
+    const storageInput = await screen.findByTestId('gate-input-data.storageSizeGb');
+    fireEvent.input(storageInput, { target: { value: '45800' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    const answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    const storage = answers.find((a: { signalId: string }) => a.signalId === 'data.storageSizeGb');
+    expect(storage).toMatchObject({ value: 45800, confirmed: false }); // a typed storage figure is an assumption
   });
 });
