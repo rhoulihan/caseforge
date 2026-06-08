@@ -65,12 +65,14 @@ An "API key" is a long password that lets CaseForge use the AI on your behalf. Y
 
 ## 2. Download and launch CaseForge
 
-1. **Download** the file for your computer from the CaseForge releases page:
-   - Windows → `caseforge-windows-amd64.zip`
-   - Mac (Apple Silicon — M1/M2/M3/M4) → `caseforge-darwin-arm64.zip`
-   - Mac (Intel) → `caseforge-darwin-amd64.zip`
-   - Linux → `caseforge-linux-amd64.zip`
-   - Linux on ARM (Raspberry Pi, AWS Graviton) → `caseforge-linux-arm64.zip`
+1. **Download** the file for your computer (each link always grabs the **latest** version):
+   - **Windows** → [caseforge-windows-amd64.zip](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-windows-amd64.zip)
+   - **Mac (Apple Silicon — M1/M2/M3/M4)** → [caseforge-darwin-arm64.zip](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-darwin-arm64.zip)
+   - **Mac (Intel)** → [caseforge-darwin-amd64.zip](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-darwin-amd64.zip)
+   - **Linux** → [caseforge-linux-amd64.zip](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-linux-amd64.zip)
+   - **Linux on ARM (Raspberry Pi, AWS Graviton)** → [caseforge-linux-arm64.zip](https://github.com/rhoulihan/caseforge/releases/latest/download/caseforge-linux-arm64.zip)
+
+   Or browse every version on the [CaseForge releases page](https://github.com/rhoulihan/caseforge/releases/latest).
 
    *Not sure which Mac you have?* Click the Apple menu (top-left) → **About This Mac**. "Chip: Apple M…" = Apple Silicon; "Processor: Intel" = Intel.
 2. **Unzip it** (double-click the `.zip`). You get a folder with a few files, including a **start** file and a `Guide.md` (this guide).
