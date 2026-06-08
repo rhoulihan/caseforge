@@ -54,8 +54,8 @@ describe('Step4Confirm', () => {
   it('shows a BLOCKED verdict + gate items when a required signal is missing, and refuses to confirm', async () => {
     setup(topologyOnly);
     await screen.findByText('BLOCKED');
-    // a gate item for the missing utilization signal is rendered
-    expect(screen.getAllByText(/confirm a real measurement/i).length).toBeGreaterThan(0);
+    // a gate item for the missing utilization signal is rendered (entering the value is the confirmation)
+    expect(screen.getAllByText(/Enter the measured value to confirm/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await screen.findByText(/still blocked/i);
     expect(screen.getByTestId('confirmed').textContent).toBe('false');

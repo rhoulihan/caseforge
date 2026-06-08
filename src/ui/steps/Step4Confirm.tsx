@@ -19,23 +19,24 @@ const TIER_LABEL: Record<string, string> = { blocked: 'BLOCKED', 'directional-es
 
 function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer | null) => void }) {
   const isUtil = item.signalId.startsWith('util');
-  const [confirmed, setConfirmed] = useState(false);
   const [val, setVal] = useState('');
   const [avg, setAvg] = useState('');
   const [peak, setPeak] = useState('');
 
-  const emit = (c: boolean, v: SignalValue | null): void => onAnswer(v === null ? null : { signalId: item.signalId, value: v, confirmed: c });
+  // A provided value IS the confirmation (a 'manual' measurement, cap 1.0); a blank input clears the answer.
+  // No separate "confirm" checkbox — entering a number is the act of confirming it.
+  const emit = (v: SignalValue | null): void => onAnswer(v === null ? null : { signalId: item.signalId, value: v, confirmed: true });
   const onNum = (raw: string): void => {
     setVal(raw);
     const n = Number(raw);
-    emit(confirmed, raw.trim() === '' || Number.isNaN(n) ? null : n);
+    emit(raw.trim() === '' || Number.isNaN(n) ? null : n);
   };
   const onUtil = (a: string, p: string): void => {
     setAvg(a);
     setPeak(p);
     const an = Number(a);
     const pn = Number(p);
-    emit(confirmed, a.trim() === '' || p.trim() === '' || Number.isNaN(an) || Number.isNaN(pn) ? null : { avgPct: an / 100, peakPct: pn / 100 });
+    emit(a.trim() === '' || p.trim() === '' || Number.isNaN(an) || Number.isNaN(pn) ? null : { avgPct: an / 100, peakPct: pn / 100 });
   };
 
   return (
@@ -53,19 +54,7 @@ function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer 
         ) : (
           <input type="number" aria-label={`${item.label} value`} placeholder="value" value={val} onInput={(e) => onNum(e.currentTarget.value)} />
         )}
-        <label>
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(e) => {
-              const c = e.currentTarget.checked;
-              setConfirmed(c);
-              if (isUtil) onUtil(avg, peak);
-              else onNum(val);
-            }}
-          />{' '}
-          confirm a real measurement
-        </label>
+        <span class="cf-hint">Enter the measured value to confirm it.</span>
       </div>
     </div>
   );

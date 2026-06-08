@@ -1,6 +1,6 @@
 # Design Spec — CaseForge: Portable AI Sizing & Business-Case Generator
 
-**Date:** 2026-06-04 · **Updated:** 2026-06-07 (current through v0.4.0) · **Status:** Built — public `v0.3.0` released; `v0.4.0` staged · **Author:** Rick Houlihan + Claude<br>
+**Date:** 2026-06-04 · **Updated:** 2026-06-07 (current through v0.4.0) · **Status:** Built — public `v0.4.0` released · **Author:** Rick Houlihan + Claude<br>
 **One-line:** A self-contained, browser-based app a sales rep extracts and runs locally; it ingests a folder of customer artifacts, uses the rep's own Claude or OpenAI key to reproduce the exact sizing → proposal → business-case workflow we ran by hand, and produces an internal technical review, a customer-facing brief, and a high-level business case, with an assimilate-feedback-and-refine loop.
 
 > **Update note (2026-06-07b) — OCR image redaction REMOVED.** A local tesseract OCR + canvas image-redaction
@@ -12,7 +12,7 @@
 > reads *out of* an image is still slug-anonymized in the prose. Sections §6a/§8a/§15 are kept for the design
 > record but marked superseded by this note. With the OCR path gone, v0.4.0 has no CI-unverifiable blocker.
 >
-> **Update note (2026-06-07).** The product is built and named **CaseForge** (Preact + Vite SPA, Go launcher, TypeScript strict, Vitest, pnpm). It shipped publicly as `v0.1.1` → `v0.3.0` (the `v0.3.0` tag folded in an interim `v0.2.0` error-handling milestone); `v0.4.0` is staged (an OCR image-redaction experiment was built then removed — see the OCR-removal note above). This document keeps its original design intent and adds the parts that became real: a local **anonymization** subsystem (the original "confidentiality warning" hardened into a fail-closed detect→map→replace pipeline), an **image-redaction** module, **embedded-image extraction** with a dependency-free PNG encoder, the concrete **seven-step wizard**, app-wide **error handling**, and the **CI/Release** pipeline. Sections updated in place are marked where the original draft and shipped reality differ. The canonical version story lives in `CHANGELOG.md`; sizing math + sources in `docs/SIZING-METHODOLOGY.md`.
+> **Update note (2026-06-07).** The product is built and named **CaseForge** (Preact + Vite SPA, Go launcher, TypeScript strict, Vitest, pnpm). It shipped publicly as `v0.1.1` → `v0.3.0` (the `v0.3.0` tag folded in an interim `v0.2.0` error-handling milestone); `v0.4.0` is released (an OCR image-redaction experiment was built then removed — see the OCR-removal note above). This document keeps its original design intent and adds the parts that became real: a local **anonymization** subsystem (the original "confidentiality warning" hardened into a fail-closed detect→map→replace pipeline), an **image-redaction** module, **embedded-image extraction** with a dependency-free PNG encoder, the concrete **seven-step wizard**, app-wide **error handling**, and the **CI/Release** pipeline. Sections updated in place are marked where the original draft and shipped reality differ. The canonical version story lives in `CHANGELOG.md`; sizing math + sources in `docs/SIZING-METHODOLOGY.md`.
 
 ---
 
@@ -164,7 +164,7 @@ The wizard (`src/ui/`, `STEPS` in `src/ui/state.ts`) realizes the pipeline as se
 > `stepValidity` requires every to-be-sent image acknowledged (`imageReviewKeys` ⊆ `imageAcknowledgedIds`,
 > `src/ui/state.ts`) before advancing. Excluding an image drops it from the gate.
 
-### 8b. Customer discount, always-current regeneration & business-case archives — *new in v0.4.0 (staged)*
+### 8b. Customer discount, always-current regeneration & business-case archives — *new in v0.4.0*
 Three coupled additions, designed in their own specs and summarized here:
 
 - **Customer discount** (`src/engine/discount.ts`). A per-case discount (`config.discountPct`, 0–100, set in Step 1 and adjustable in Step 6) scales only the *proposed* Oracle components (`adbPrimary`, `warmDrAdd`, `coldDrAdd`, `migrationPs`); the baseline on-prem spend stays at list, so savings and TCO reflect the negotiated price. `applyDiscount` is a **strict no-op at 0%** (returns the same reference → goldens byte-identical). `assembleDocModel` applies it before the TCO math and also scales the sizing-scenario Oracle rates, so every customer-facing figure is consistent; the renderer shows "list → net (N% off)" and `buildProseContext` tells the LLM the figures are already net. The LLM never sees the discount as an input — only the resulting (anon-safe) figures.
@@ -208,7 +208,7 @@ caseforge/
 ## 14. Tech stack
 - **Launcher:** Go (single static binary per OS, stdlib only; trivial cross-compile; no runtime). `caseforge serve` (127.0.0.1 SPA + anonymize endpoints) and the `anonymize`/`deanonymize` directory-mode CLI.
 - **SPA:** **Preact + Vite**, TypeScript strict, built to static output in `dist/`. Vendored libs (no CDN, for offline/local): `@kenjiuno/msgreader` (`.msg`), `exceljs` (`.xlsx`), `unpdf`/pdf.js (PDF), `jszip` (OOXML), `postal-mime` (`.eml`). Provider calls are thin fetch wrappers behind the `LLM` interface.
-- **Tests:** Vitest (500 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
+- **Tests:** Vitest (505 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
 - **No build step at runtime** — the shipped artifact is static files.
 
 ## 15. Image handling — *OCR redaction REMOVED (see the OCR-removal update note above)*
@@ -228,7 +228,7 @@ New source DB = new Source Profile (signal schema + model + templates + cost que
 - Provider adapter behind an injectable transport for orchestrator tests.
 - **A golden end-to-end fixture** (anonymized "Northwind Mutual Insurance") pins the sizing and business-case numbers; `*.golden.test.ts` files fail if the engine drifts.
 - **CI** (`.github/workflows/ci.yml`): `build-test` runs `lint → typecheck → test → build` (pnpm); `launcher` runs `go vet → go test → go build`.
-- **Release** (`.github/workflows/release.yml`): tagging `vX.Y.Z` publishes per-OS launcher zips. Current `package.json` version is `0.3.0`; v0.4.0 is staged (the OCR-redaction experiment was removed — no CI-unverifiable blocker).
+- **Release** (`.github/workflows/release.yml`): tagging `vX.Y.Z` publishes per-OS launcher zips. `package.json` version is `0.4.0` (released — the OCR-redaction experiment was removed, clearing the CI-unverifiable blocker).
 
 ## 18. Open questions (carried / resolved)
 - App name — **resolved: CaseForge.**
@@ -243,5 +243,5 @@ New source DB = new Source Profile (signal schema + model + templates + cost que
 3. ~~**Provider adapter + analyze/generate** for both providers.~~ Done.
 4. ~~**Three outputs + claims checklist + refine loop.**~~ Done.
 5. ~~**Packaging**: Go launcher + zip + samples; optional hosted build.~~ Done.
-6. ~~**Hardening**: anonymization, error handling, broadened ingest, embedded-image extraction.~~ Done through v0.3.0; v0.4.0 staged (also adds the customer discount, always-current regeneration, and business-case archives — §8b).
-7. **Cut `v0.4.0`** (the OCR-redaction experiment was removed, clearing the CI-unverifiable blocker). Pending.
+6. ~~**Hardening**: anonymization, error handling, broadened ingest, embedded-image extraction.~~ Done; v0.4.0 released (adds comprehensive evidence analysis, the customer discount, always-current regeneration, and business-case archives — §8b).
+7. ~~**Cut `v0.4.0`**~~ Done — the OCR-redaction experiment was removed, clearing the CI-unverifiable blocker.

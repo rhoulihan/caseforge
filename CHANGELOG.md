@@ -17,7 +17,7 @@ every release below:
   map; the launcher substitutes real text for slugs *before* any AI call. The anonymized content
   is the only thing that ever leaves the machine.
 
-## [0.4.0] — Unreleased
+## [0.4.0] — 2026-06-07
 
 > Everything below landed on `main` after the `v0.3.0` tag. A local OCR image-redaction experiment was
 > built during this cycle and then **removed before release** (tesseract OCR garbled real-world dark-theme
@@ -87,6 +87,9 @@ every release below:
 
 ### Changed
 
+- **Step-4 gate: a provided value is the confirmation.** Removed the per-signal "confirm a real measurement"
+  checkbox — entering a value in the gate now *is* the confirmation (a `manual` measurement); a blank input
+  leaves the existing reading untouched. Less confusing, one fewer click.
 - **A confident vision read is now engineering-grade.** The data-sufficiency engineering floor was lowered
   to the vision confidence cap (0.70), so a required signal read off a chart/screenshot at full vision
   confidence counts as *satisfied / engineering-grade* rather than a perpetual *directional estimate* — a
@@ -159,6 +162,6 @@ every release below:
 - **Release & CI.** Tagging `vX.Y.Z` triggers a Release workflow that publishes per-OS launcher zips;
   CI runs build-test (the TypeScript suite + build) and launcher (Go tests).
 
-[0.4.0]: https://github.com/rhoulihan/caseforge/compare/v0.3.0...HEAD
+[0.4.0]: https://github.com/rhoulihan/caseforge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/rhoulihan/caseforge/compare/v0.1.1...v0.3.0
 [0.1.1]: https://github.com/rhoulihan/caseforge/releases/tag/v0.1.1

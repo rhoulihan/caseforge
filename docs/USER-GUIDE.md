@@ -161,7 +161,7 @@ CaseForge classifies the (anonymized) evidence and shows a **verdict**:
 - **DIRECTIONAL ESTIMATE** — enough for a credible ballpark; a few details are assumed (estimated).
 - **BLOCKED** — a must-have detail is missing; you'll need to supply it before continuing (it's listed for you).
 
-Below the verdict is what it found for each required input, and — if anything's missing or assumed — a short list to confirm. For each, tick **"confirm a real measurement"** and type the real value if you have it (this improves accuracy); otherwise leave it and CaseForge uses a sensible estimate. Click **Confirm & continue →**, then **Next →**.
+Below the verdict is what it found for each required input, and — if anything's missing or low-confidence — a short list to confirm. **Just type the real value** where you have it — entering a number *is* the confirmation (no extra checkbox), and it's treated as a measured value. Anything CaseForge already read (e.g. from a chart) is kept if you leave it blank; a *missing* required value must be supplied to continue. Click **Confirm & continue →**, then **Next →**.
 
 You can generate from a *Directional* estimate — the documents will say so clearly.
 
