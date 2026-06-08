@@ -10,6 +10,7 @@ import type { TriageResult } from '../classify/types';
 import type { GateAnswer } from '../orchestrate/gate';
 import type { PipelineOutput } from '../orchestrate';
 import type { DocModel, RenderedDoc } from '../render/types';
+import type { Usage } from '../provider';
 
 export type WizardStepId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type Provider = 'claude' | 'openai';
@@ -58,6 +59,7 @@ export interface WizardState {
   imagesReviewed: boolean; // images OCR-redacted + reviewed by the rep (or none present)
   // 4 · Confirm
   triage: TriageResult | null;
+  classifyUsage?: Usage; // the Step-4 classify LLM cost, forwarded so runPipeline counts it in the budget
   gateAnswers: GateAnswer[];
   confirmed: boolean;
   // 5 · Generate

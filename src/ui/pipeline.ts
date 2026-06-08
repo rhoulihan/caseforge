@@ -86,7 +86,8 @@ export function buildRunConfig(a: BuildConfigArgs): RunConfig {
     llm: createLLM(state.config.provider, { apiKey: a.apiKey }),
     model: MODEL,
     budgetLimit: { tokens: state.config.tokenBudget },
-    triage: state.triage, // reuse the Step-4 triage — no second classify pass
+    triage: state.triage, // reuse the Step-4 triage — no second classify pass (carries qualContext too)
+    classifyUsage: state.classifyUsage, // so the reused-triage path still counts the classify cost
     gateAnswers: state.gateAnswers,
     discountPct: state.config.discountPct, // current customer discount → recomputed every regenerate
     proseInstruction: a.proseInstruction,

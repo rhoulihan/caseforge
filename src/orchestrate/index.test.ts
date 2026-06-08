@@ -109,4 +109,12 @@ describe('runPipeline', () => {
     expect(out.docModel).toBeDefined();
     expect(out.budgetLog.some((c) => c.stage === 'classify' && /reused/.test(c.reason ?? ''))).toBe(true);
   });
+
+  it('counts the classify cost from a precomputed triage when classifyUsage is provided', async () => {
+    const { result: precomputed } = await triage(fullBundle, MONGODB_PROFILE);
+    const out = await runPipeline({ ...baseConfig(), triage: precomputed, classifyUsage: { inputTokens: 100, outputTokens: 50 } });
+    const classify = out.budgetLog.find((c) => c.stage === 'classify');
+    expect(classify?.inputTokens).toBe(100);
+    expect(classify?.skipped).toBeUndefined(); // counted, not skipped
+  });
 });

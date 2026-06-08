@@ -10,6 +10,7 @@ import type { LLM, Usage } from '../provider';
 import type { DocModel, RenderedDoc, ClaimInput } from '../render/types';
 import { triage } from '../classify/triage';
 import type { TriageResult } from '../classify/types';
+import type { MapEntry } from '../anon/mapping';
 import { buildGateData, applyGateAnswers, type GateAnswer, type GateItem } from './gate';
 import { assembleDocModel, type EcpuStorageRates } from '../render/builders';
 import { generateProse } from './prose';
@@ -41,6 +42,10 @@ export interface RunConfig {
   gateAnswers?: GateAnswer[];
   /** Precomputed triage (e.g. the UI ran it to show the sufficiency/gate) — skips re-running triage here. */
   triage?: TriageResult;
+  /** The rep's approved map — passed to triage() so image-derived qualitative context is re-anonymized. */
+  anonMap?: MapEntry[];
+  /** The classify-stage LLM usage from a caller-precomputed triage, so its cost is still counted here. */
+  classifyUsage?: Usage;
   /** Customer discount on the proposed solution (0 = none). Applied to the TCO before the math. */
   discountPct?: number;
   /** Refinement instruction forwarded to prose generation (wording/emphasis only; figures stay engine-locked). */
@@ -83,16 +88,32 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
     if (last) config.onCheckpoint?.(last);
   };
 
-  // 1. Classify (LLM optional — heuristics-only when no llm). Reuse a caller-precomputed triage if
-  //    given (e.g. the UI ran it for the sufficiency/gate) to avoid a second LLM-classify pass.
-  //    triage now returns its LLM usage, but wiring it into the budget is deferred to PR-D
-  //    (RunConfig.classifyUsage); record a visibility checkpoint either way for now.
-  const tri = config.triage ?? (await triage(config.bundle, config.profile, config.llm, model)).result;
+  // 1. Classify (LLM optional — heuristics-only when no llm). Reuse a caller-precomputed triage if given
+  //    (e.g. the UI ran it for the sufficiency/gate) to avoid a second LLM-classify pass. The classify
+  //    stage's LLM usage is counted in the budget: actual usage when we run triage; the caller's
+  //    classifyUsage when triage was precomputed.
+  let tri: TriageResult;
   if (config.triage) {
-    recordSkipped(budget, 'classify', 'classify reused from caller (not re-run; LLM usage counted by caller)');
+    tri = config.triage;
+    if (config.classifyUsage) recordUsage(budget, 'classify', config.classifyUsage);
+    else recordSkipped(budget, 'classify', 'classify reused from caller (LLM usage counted by caller)');
     fireCheckpoint();
-  } else if (config.llm) {
-    recordSkipped(budget, 'classify', 'classify LLM usage is returned by triage but not yet counted here (wired in PR-D)');
+  } else {
+    if (config.llm) {
+      // Project the classify spend before the calls (one per image + one per text/table primitive).
+      const imgCount = config.bundle.primitives.filter((p) => p.kind === 'image').length;
+      const txtCount = config.bundle.primitives.filter((p) => p.kind === 'text' || p.kind === 'table').length;
+      const classifyGuard = budgetGuard(budget, 'classify', imgCount * 2000 + txtCount * 500, (imgCount + txtCount) * 200);
+      if (!classifyGuard.proceed) {
+        recordSkipped(budget, 'classify', classifyGuard.warning ?? 'classify budget exceeded');
+        fireCheckpoint();
+        return { ...base, budgetLog: log(), gate: clear, error: classifyGuard.warning };
+      }
+    }
+    const ran = await triage(config.bundle, config.profile, config.llm, model, config.anonMap);
+    tri = ran.result;
+    if (config.llm) recordUsage(budget, 'classify', ran.usage);
+    else recordSkipped(budget, 'classify', 'no LLM — heuristics-only classify');
     fireCheckpoint();
   }
 
@@ -108,7 +129,8 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
   if (!config.llm) {
     return { ...base, budgetLog: log(), gate: clear, error: 'no LLM provided — prose generation requires a provider' };
   }
-  const guard = budgetGuard(budget, 'generate', 3000, 1500);
+  // Estimate scales a little with the qualitative context that will ride in the prompt.
+  const guard = budgetGuard(budget, 'generate', 3000 + (tri.qualContext?.items.length ?? 0) * 50, 1500);
   if (!guard.proceed) {
     recordSkipped(budget, 'generate', guard.warning ?? 'budget exceeded');
     fireCheckpoint();
@@ -130,7 +152,7 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
     prose: PLACEHOLDER_PROSE,
     claims: config.claims,
   });
-  const { prose, usage } = await generateProse(numericModel, config.llm, model, config.proseInstruction);
+  const { prose, usage } = await generateProse(numericModel, config.llm, model, config.proseInstruction, tri.qualContext);
   recordUsage(budget, 'generate', usage);
   fireCheckpoint();
 
