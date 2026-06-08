@@ -106,6 +106,12 @@ every release below:
 
 ### Fixed
 
+- **Claims checklist was empty unless cost research ran.** The checklist was built only from caller-supplied
+  claims, which the UI populated solely from "Research costs" — so a generate without research produced an
+  empty Claims Checklist. `assembleDocModel` now synthesizes the authoritative sizing + TCO claims from the
+  engine numbers (each with confidence derived from the signal coverage), merged with any researched cost
+  claims and deduped by id (stable across a refine round-trip). The checklist now always covers the headline
+  figures (shard count, vCPU, CPU utilization, provisioned base, on-prem/ADB cost, savings, payback).
 - **OOM guards on PDF image decode.** pdf.js is given a `maxImageSize` so a crafted PDF can't force a
   giant decode, with a second pixel-cap check after decode as a backstop.
 - **Per-page timeout race** (`PDF_IMAGE_EXTRACT_MS`, 20s) so a stuck pdf.js object can't wedge ingest.
