@@ -7,7 +7,7 @@ import { ErrorProvider } from '../ErrorContext';
 import type { EvidenceBundle, KeyValuePrimitive, TablePrimitive, FileReport } from '../../ingest/types';
 
 // Heuristic-bindable evidence (keyvalue + table) → triage binds everything WITHOUT an LLM call.
-const topology: KeyValuePrimitive = { kind: 'keyvalue', source: 'topology.txt', pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16' } };
+const topology: KeyValuePrimitive = { kind: 'keyvalue', source: 'topology.txt', pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '45800' } };
 const utilTable: TablePrimitive = {
   kind: 'table',
   source: 'metrics.csv',

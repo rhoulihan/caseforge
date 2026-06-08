@@ -17,8 +17,8 @@ const util = (signalId: string, method: DerivationMethod = 'numeric-series'): Bi
   evidence: [],
 });
 
-// All required satisfied EXCEPT util.primary (missing).
-const partial = [num('cluster.shardCount', 3), num('node.hoVcpu', 32), num('node.drVcpu', 16), util('util.hoSec'), util('util.dr')];
+// All required satisfied EXCEPT util.primary (missing). Storage (data.storageSizeGb) is included as required.
+const partial = [num('cluster.shardCount', 3), num('node.hoVcpu', 32), num('node.drVcpu', 16), util('util.hoSec'), util('util.dr'), num('data.storageSizeGb', 300)];
 
 describe('buildGateData', () => {
   it('produces no items when all required signals are satisfied', () => {

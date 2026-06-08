@@ -84,6 +84,22 @@ const required: SignalSpec[] = [
     collectRequest: 'Average AND peak System-CPU % on the DR-region nodes.',
     collectWhy: 'Summed into the full-cluster ECPU. Defaultable to a replication-only level — a flagged assumption.',
   },
+  {
+    id: 'data.storageSizeGb',
+    label: 'On-disk (compressed) storage size',
+    unit: 'GB',
+    valueKind: 'scalar',
+    criticality: 'required',
+    defaultable: true,
+    tcoCritical: true,
+    derivableBy: ['keyvalue', 'table-lookup', 'numeric-series', 'vision'],
+    aliases: ['storage size', 'storagesize', 'disk usage', 'compressed data size'],
+    // No engineSlot: it doesn't feed the ECPU compute — it feeds the ADB storage cost line, the cold-DR
+    // RTO, and the cost-research prompt. It is required because it drives the dominant TCO figure; a
+    // missing value must block (or be a flagged rep assumption), never a silent default.
+    collectRequest: 'On-disk storage size after WiredTiger compression (`db.stats().storageSize`, or disk-usage metric).',
+    collectWhy: 'The ADB storage line + migration volume — the dominant cost driver; sizing cannot be costed without it.',
+  },
 ];
 
 const recommended: SignalSpec[] = [
@@ -111,19 +127,6 @@ const recommended: SignalSpec[] = [
     aliases: ['logical data size', 'data size', 'datasize', 'db.stats datasize'],
     collectRequest: 'Total logical data size (`db.stats().dataSize` summed, or the Ops Manager/Atlas "Logical Data Size").',
     collectWhy: 'Storage is ~79% of the Northwind bill — the dominant TCO line. The ECPU number survives without it, but the cost case does not.',
-  },
-  {
-    id: 'data.storageSizeGb',
-    label: 'On-disk (compressed) storage size',
-    unit: 'GB',
-    valueKind: 'scalar',
-    criticality: 'recommended',
-    defaultable: true,
-    tcoCritical: true,
-    derivableBy: ['keyvalue', 'table-lookup', 'numeric-series', 'vision'],
-    aliases: ['storage size', 'storagesize', 'disk usage', 'compressed data size'],
-    collectRequest: 'On-disk storage size after WiredTiger compression (`db.stats().storageSize`, or disk-usage metric).',
-    collectWhy: 'The ADB storage line + migration volume — a primary cost driver.',
   },
   {
     id: 'data.indexSizeGb',
