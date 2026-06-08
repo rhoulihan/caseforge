@@ -87,6 +87,13 @@ every release below:
 
 ### Changed
 
+- **A confident vision read is now engineering-grade.** The data-sufficiency engineering floor was lowered
+  to the vision confidence cap (0.70), so a required signal read off a chart/screenshot at full vision
+  confidence counts as *satisfied / engineering-grade* rather than a perpetual *directional estimate* — a
+  value read from an image is as good as reading it off the source. Heuristic (0.60) and assumption-default
+  (0.50) reads still sit below the floor, so a fuzzy or defaulted signal still reads as needs-confirmation.
+  The extraction prompts were also strengthened to pull the shard / replica-set count and topology counts
+  out of intake forms, tables, and prose — not just plotted charts.
 - **Regeneration is no longer wording-only.** Earlier behavior froze the numbers at first generation
   and let refine change only prose. Regeneration now recomputes every authoritative number from current
   settings (see "Always-current regeneration" above); the determinism boundary is unchanged — the engine

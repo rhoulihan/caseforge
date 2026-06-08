@@ -50,7 +50,7 @@ const utilTable: TablePrimitive = {
 };
 
 describe('Northwind golden: classify -> size, determinism seam', () => {
-  it('chart screenshots (vision) -> directional-estimate with the 3 util signals as upgrade asks', async () => {
+  it('chart screenshots (vision) -> engineering-grade (a confident vision read clears the 0.70 floor)', async () => {
     const bundle: EvidenceBundle = {
       primitives: [topology, img('primary-cpu.png'), img('secondary-cpu.png'), img('dr-cpu.png')],
       files: [
@@ -63,14 +63,10 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
     const { result } = await triage(bundle, MONGODB_PROFILE, queuedVisionMock(), 'claude-opus-4-8');
     const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
 
-    expect(report.verdict.tier).toBe('directional-estimate');
-    expect(report.whatToCollect.filter((w) => w.severity === 'upgrade').map((w) => w.signalId).sort()).toEqual([
-      'util.dr',
-      'util.hoSec',
-      'util.primary',
-    ]);
+    expect(report.verdict.tier).toBe('engineering-grade'); // vision reads (cap 0.70) clear the engineering floor
+    expect(report.whatToCollect.filter((w) => w.severity === 'upgrade')).toHaveLength(0);
     expect(report.whatToCollect.filter((w) => w.severity === 'blocking')).toHaveLength(0);
-    // The numbers still assemble — only the confidence/tier differ from the native run.
+    // The numbers assemble identically to the native run.
     expect(toSizingInputs(result.bindings, MONGODB_PROFILE).inputs).toEqual(NORTHWIND_SIZING);
   });
 
@@ -102,7 +98,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
     expect(ceilings(18)).toEqual({ x2: 36, x3: 54 });
   });
 
-  it('the motivating case: a single .msg whose data is ONLY in embedded images + email text -> directional, not BLOCKED', async () => {
+  it('the motivating case: a single .msg whose data is ONLY in embedded images + email text -> engineering-grade, not BLOCKED', async () => {
     // One artifact image carries the intake-form scalars (shards, tier) AND a 3-node CPU dashboard; the
     // email body carries a customer concern. Vision reads the image; classifyText reads the (slugged) body.
     const emailBody: TextPrimitive = { kind: 'text', source: 'thread.msg', text: 'CF_ORG_01 needs payback under two years' };
@@ -138,7 +134,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
     const { result } = await triage(bundle, MONGODB_PROFILE, llm, 'claude-opus-4-8');
     const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
 
-    expect(report.verdict.tier).toBe('directional-estimate'); // was BLOCKED (5/6 missing) before this work
+    expect(report.verdict.tier).toBe('engineering-grade'); // was BLOCKED (5/6 missing); vision reads now clear the 0.70 floor
     const { inputs, missing } = toSizingInputs(result.bindings, MONGODB_PROFILE);
     expect(missing).toEqual([]);
     expect(inputs!.shards).toBe(3);
