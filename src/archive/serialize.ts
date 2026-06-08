@@ -115,8 +115,7 @@ export async function serializeCase(state: WizardState, meta: ArchiveMeta): Prom
     detected: state.detected,
     map: state.map,
     imagesReviewed: state.imagesReviewed,
-    imageReviewKeys: state.imageReviewKeys,
-    imageAcknowledgedIds: state.imageAcknowledgedIds,
+    imagesVerifiedClean: state.imagesVerifiedClean,
     triage: state.triage,
     gateAnswers: state.gateAnswers,
     confirmed: state.confirmed,
@@ -217,8 +216,7 @@ export async function deserializeCase(zipBytes: Uint8Array): Promise<LoadedCase>
     map: stateJson.map as WizardState['map'],
     anonBundle: await bundleFromJson(zip, stateJson.anonBundle),
     imagesReviewed: stateJson.imagesReviewed as boolean,
-    imageReviewKeys: (stateJson.imageReviewKeys as string[] | undefined) ?? [], // tolerate pre-PR-E archives
-    imageAcknowledgedIds: (stateJson.imageAcknowledgedIds as string[] | undefined) ?? [],
+    imagesVerifiedClean: (stateJson.imagesVerifiedClean as boolean | undefined) ?? false, // tolerate pre-v0.5 archives
     triage: stateJson.triage as WizardState['triage'],
     gateAnswers: stateJson.gateAnswers as WizardState['gateAnswers'],
     confirmed: stateJson.confirmed as boolean,

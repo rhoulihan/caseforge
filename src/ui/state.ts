@@ -56,11 +56,7 @@ export interface WizardState {
   map: MapEntry[];
   anonBundle: EvidenceBundle | null; // bundle with text primitives replaced by slugs (what triage/LLM sees)
   imagesReviewed: boolean; // anonymize ran + images surfaced for review (or none present)
-  // Per-image acknowledge gate (D2): every redacted image shown for review must be explicitly
-  // acknowledged before Step 3 can advance. Keyed `${primitiveIndex}:${source}` off the FULL bundle
-  // index (captured at anonymize), so the keys stay stable even if the rep later excludes an image.
-  imageReviewKeys: string[]; // every image presented for review
-  imageAcknowledgedIds: string[]; // the subset the rep has acknowledged ("I reviewed this redaction")
+  imagesVerifiedClean: boolean; // the rep ticked the single "images verified clean" gate (Step 3)
   // 4 · Confirm
   triage: TriageResult | null;
   classifyUsage?: Usage; // the Step-4 classify LLM cost, forwarded so runPipeline counts it in the budget
@@ -101,8 +97,7 @@ export function initialWizardState(): WizardState {
     map: [],
     anonBundle: null,
     imagesReviewed: false,
-    imageReviewKeys: [],
-    imageAcknowledgedIds: [],
+    imagesVerifiedClean: false,
     triage: null,
     gateAnswers: [],
     confirmed: false,
@@ -118,12 +113,11 @@ export function initialWizardState(): WizardState {
 export function stepValidity(s: WizardState): Record<WizardStepId, boolean> {
   const setupOk = !!s.config && s.hasApiKey && s.config.companyName.trim().length > 0;
   const filesOk = !!s.bundle && s.bundle.primitives.length > 0;
-  // Images are sent to vision AS-IS (not scrubbed), so the rep must review + acknowledge each image that
-  // will be sent before advancing (D2). imageReviewKeys is populated by anonymizeAll (and trimmed when an
-  // image is excluded), so the gate bites in the real flow; a hand-built state with no keys is vacuous.
+  // Images are sent to vision AS-IS (not scrubbed). anonBundle only contains images that WILL be sent
+  // (excluded images are filtered out), so anonHasImages reflects the actual sent set. The rep must
+  // tick the single "images verified clean" checkbox before Step 3 can advance when images are present.
   const anonHasImages = !!s.anonBundle?.primitives.some((p) => p.kind === 'image');
-  const allImagesAcked = s.imageReviewKeys.every((k) => s.imageAcknowledgedIds.includes(k));
-  const anonOk = !!s.anonBundle && (!anonHasImages || (s.imagesReviewed && allImagesAcked));
+  const anonOk = !!s.anonBundle && (!anonHasImages || (s.imagesReviewed && s.imagesVerifiedClean));
   return {
     1: setupOk,
     2: setupOk && filesOk,

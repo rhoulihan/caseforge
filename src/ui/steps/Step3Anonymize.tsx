@@ -1,8 +1,9 @@
 // Step 3 · Anonymize — detect sensitive phrases LOCALLY (no AI) in TEXT, let the rep review/edit the
 // fail-closed map, then replace real text with slugs via the launcher BEFORE any AI call. Images are NOT
 // scrubbed: CaseForge sends each image to the AI's vision model AS-IS, so the rep is responsible for making
-// sure an image carries no sensitive content (or excluding it). Each image that will be sent must be
-// reviewed + acknowledged before the step advances. Tables/keyvalues are bound by local heuristics.
+// sure an image carries no sensitive content (or excluding it). The rep reviews each image and excludes any
+// they don't want sent, then ticks a single "images verified clean" checkbox before the step advances.
+// Tables/keyvalues are bound by local heuristics.
 
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
@@ -50,7 +51,7 @@ export function Step3Anonymize() {
   // Back-nav recovery: if we remounted with the reviewed flag set but no local previews to show, the review
   // panel would be empty + unusable — force a re-anonymize so the rep can re-review the images.
   useEffect(() => {
-    if (state.imagesReviewed && imgReview.length === 0) patch({ imagesReviewed: false, imageReviewKeys: [], imageAcknowledgedIds: [] });
+    if (state.imagesReviewed && imgReview.length === 0) patch({ imagesReviewed: false, imagesVerifiedClean: false });
   }, [state.imagesReviewed, imgReview.length, patch]);
 
   // Free preview object URLs when they're replaced (re-anonymize) or the step unmounts.
@@ -93,9 +94,8 @@ export function Step3Anonymize() {
       setAnonPrims(primitives);
       setImgReview(review);
       setExcluded(new Set());
-      // Each image that will be sent must be acknowledged before Step 3 advances. Capture the stable review
-      // keys (full-bundle index + source) and clear prior acknowledgements (this is a fresh review pass).
-      patch({ anonBundle, imagesReviewed: true, imageReviewKeys: review.map((r) => `${r.id}:${r.source}`), imageAcknowledgedIds: [] });
+      // A fresh anonymize pass clears any prior "images verified clean" attestation — the rep must re-tick.
+      patch({ anonBundle, imagesReviewed: true, imagesVerifiedClean: false });
     } catch (e) {
       review.forEach((r) => URL.revokeObjectURL(r.url)); // don't leak previews created before the throw
       setError((e as Error).message);
@@ -105,29 +105,20 @@ export function Step3Anonymize() {
     }
   }
 
-  // Drop / re-include an image from the AI. Excluding an image also drops it from the review gate — an
-  // image that isn't sent doesn't need a "safe to send" acknowledgement. Keyed by primitive index.
+  // Drop / re-include an image from the AI. Changing the sent set resets the attestation checkbox —
+  // the rep must re-tick "images verified clean" after any exclusion change. Keyed by primitive index.
   function toggleExclude(id: number): void {
     if (!anonPrims || !state.anonBundle) return;
     const next = new Set(excluded);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setExcluded(next);
-    const reviewKeys = imgReview.filter((r) => !next.has(r.id)).map((r) => `${r.id}:${r.source}`);
     patch({
       anonBundle: { files: state.anonBundle.files, primitives: anonPrims.filter((p, i) => p.kind !== 'image' || !next.has(i)) },
       imagesReviewed: true,
-      imageReviewKeys: reviewKeys,
+      imagesVerifiedClean: false,
     });
   }
-
-  // The rep attests they reviewed this image and it is safe to send. Keyed by the stable index + source.
-  function toggleAcknowledge(id: number, source: string): void {
-    const key = `${id}:${source}`;
-    const acked = state.imageAcknowledgedIds.includes(key);
-    patch({ imageAcknowledgedIds: acked ? state.imageAcknowledgedIds.filter((k) => k !== key) : [...state.imageAcknowledgedIds, key] });
-  }
-  const isAcked = (r: ImgReview): boolean => state.imageAcknowledgedIds.includes(`${r.id}:${r.source}`);
 
   const imageCount = state.bundle?.primitives.filter((p) => p.kind === 'image').length ?? 0;
 
@@ -200,39 +191,37 @@ export function Step3Anonymize() {
           <p class="cf-error">
             ⚠ CaseForge does <b>not</b> scrub text inside images. Each image is sent to the AI's vision model <b>exactly as shown</b>. You are
             responsible for making sure an image has no sensitive content you don't want shared — review each preview and untick
-            “send this image to the AI” to exclude any image.
+            "send this image to the AI" to exclude any image.
           </p>
           {imgReview.length === 0 ? (
-            <p class="cf-hint">Click “{state.anonBundle ? 'Re-anonymize' : 'Anonymize & continue'}” to preview the {imageCount} image(s) that will be sent.</p>
+            <p class="cf-hint">Click "{state.anonBundle ? 'Re-anonymize' : 'Anonymize & continue'}" to preview the {imageCount} image(s) that will be sent.</p>
           ) : (
             <>
               <div class="cf-imggrid">
                 {imgReview.map((r) => (
-                  <figure key={r.id} class={`cf-imgcard${excluded.has(r.id) ? ' excluded' : ''}${excluded.has(r.id) || isAcked(r) ? '' : ' unacked'}`}>
+                  <figure key={r.id} class={`cf-imgcard${excluded.has(r.id) ? ' excluded' : ''}`}>
                     <img src={r.url} alt={`preview of ${r.source} (sent to the AI as-is)`} />
                     <figcaption>
                       <span class="cf-muted">{r.source}</span>
                       <label>
                         <input type="checkbox" checked={!excluded.has(r.id)} onChange={() => toggleExclude(r.id)} /> send this image to the AI
                       </label>
-                      {!excluded.has(r.id) ? (
-                        <label>
-                          <input type="checkbox" aria-label={`acknowledge ${r.source}`} checked={isAcked(r)} onChange={() => toggleAcknowledge(r.id, r.source)} /> I have reviewed this image — it's safe to send
-                        </label>
-                      ) : null}
                     </figcaption>
                   </figure>
                 ))}
               </div>
-              {(() => {
-                const sent = imgReview.filter((r) => !excluded.has(r.id));
-                const acked = sent.filter(isAcked).length;
-                return acked < sent.length ? (
-                  <p class="cf-hint">{acked} of {sent.length} image(s) acknowledged — review each one and tick “I have reviewed this image” (or exclude it) before continuing.</p>
-                ) : (
-                  <p class="cf-ok">✓ All {sent.length} image(s) to be sent have been reviewed. Click Next.</p>
-                );
-              })()}
+              {imgReview.some((r) => !excluded.has(r.id)) ? (
+                <label class="cf-imgverify">
+                  <input
+                    type="checkbox"
+                    checked={state.imagesVerifiedClean}
+                    onChange={(e) => patch({ imagesVerifiedClean: e.currentTarget.checked })}
+                  />{' '}
+                  I have reviewed every image being sent and verified none contains sensitive content.
+                </label>
+              ) : (
+                <p class="cf-hint">All images excluded — none will be sent to the AI.</p>
+              )}
             </>
           )}
         </div>
