@@ -17,14 +17,25 @@ every release below:
   map; the launcher substitutes real text for slugs *before* any AI call. The anonymized content
   is the only thing that ever leaves the machine.
 
-## [0.4.0] — Unreleased (pending manual OCR verification)
+## [0.4.0] — Unreleased
 
-> Held for release: the OCR paths (image redaction and embedded-image scanning) exercise tesseract
-> WASM + canvas, which CI/jsdom cannot run. This version is blocked on a manual in-browser
-> verification of those paths. Everything below landed on `main` after the `v0.3.0` tag.
+> Everything below landed on `main` after the `v0.3.0` tag. A local OCR image-redaction experiment was
+> built during this cycle and then **removed before release** (tesseract OCR garbled real-world dark-theme
+> dashboards, and the WASM+canvas path could not be CI-verified). Images are instead sent to the AI's
+> vision model **as-is**, with the rep responsible for reviewing/excluding them — see *Changed*. With the
+> OCR path gone, v0.4.0 no longer has a CI-unverifiable blocker.
 
 ### Added
 
+- **Comprehensive evidence analysis.** Every artifact the rep drops — in any modality, including images —
+  is now mined for *both* quantitative sizing signals *and* qualitative deliverable context. A single
+  Outlook `.msg` whose data lived only in embedded screenshots (an intake form + monitoring dashboards)
+  now sizes end-to-end (it previously came back BLOCKED). The narrow chart reader was replaced with
+  `readArtifactImage` (multi-panel, typed bindings: scalars/enums/per-role avg-peak) and `classifyText`
+  (`src/classify/llm.ts`); an Atlas **tier → vCPU** lookup lets the LLM read the tier *string* while the
+  engine computes the number (determinism boundary intact). Customer concerns / objections / timeline /
+  positioning are extracted and woven into all four deliverables — slug-anonymized before the LLM, restored
+  at render. The classify stage is now on the cost budget.
 - **Customer discount on the proposed solution.** A per-case discount (0–100%, entered in Setup and
   adjustable in Refine) scales only the proposed Oracle components (ADB primary + warm/cold DR +
   migration PS) while the baseline on-prem spend stays at list, so savings and TCO reflect the rep's
@@ -55,24 +66,18 @@ every release below:
   add-files note run through local name-detection first: an instruction naming anything not in the
   approved map is **blocked** (never sent), otherwise it is slug-anonymized before reaching the LLM and
   the raw text is kept local in the resume log (`src/ui/refine.ts`).
-- **Local OCR image redaction before vision.** Chart/screenshot images are read by the LLM's vision
-  model, so text baked into them could leak. A local, fully offline OCR pass (tesseract.js v7; WASM
-  self-hosted under `/tesseract`, assets assembled by `scripts/setup-tesseract-assets.mjs`) finds
-  matched phrases and paints opaque black boxes over them on a canvas *before* the image is used.
-  The redaction module is split into a pure orchestrator (`src/redaction/index.ts`), a pure
-  phrase→rectangle matcher (`match.ts`, unit-tested under Node), a tesseract shim (`ocr.ts`), a
-  canvas shim (`paint.ts`), and a code-split browser entry (`browser.ts`) that keeps tesseract out
-  of the main bundle.
-- **Embedded-image extraction.** Ingest now pulls raster images out of containers and emits them as
-  image primitives, so PII baked into charts and screenshots becomes reviewable: `.msg` image
-  attachments, OOXML media (`(word|ppt|xl)/media/*`), and PDF image XObjects.
-- **Dependency-free PNG encoder** (`src/ingest/png.ts`) — wraps raw pixel buffers (e.g. images
-  pdf.js decodes out of a PDF) into a valid PNG using *stored* (uncompressed) zlib blocks; no canvas
-  and no compression dependency, so it runs identically in Node and the browser.
-- **Two-step Step 3 flow.** A "Scan images for hidden text" action OCRs every extracted image, folds
-  any detected text into the rep-approved map (each image-derived phrase badged to its source image),
-  and is **gated before** the Anonymize action. Source-tagged detection + merge live in
-  `detectCandidatesInImage` and `mergeDetected` (`src/anon/detect.ts`).
+- **Image evidence sent to vision, reviewed per-image (Step 3).** Chart/screenshot/dashboard images are
+  sent to the AI's vision model so it can read the data in them. CaseForge does **not** alter image pixels;
+  Step 3 surfaces a preview of every image that will be sent, with a prominent warning that the rep is
+  responsible for its content, a per-image **"send this image to the AI"** exclude, and a fail-closed
+  **"I have reviewed this image — it's safe to send"** acknowledgement that gates advancing. (A name the
+  vision model reads *out of* an image is still slug-anonymized in the generated prose.)
+- **Embedded-image extraction.** Ingest pulls raster images out of containers and emits them as image
+  primitives so the vision model can read data baked into charts/screenshots: `.msg` image attachments,
+  OOXML media (`(word|ppt|xl)/media/*`), and PDF image XObjects.
+- **Dependency-free PNG encoder** (`src/ingest/png.ts`) — wraps raw pixel buffers (e.g. images pdf.js
+  decodes out of a PDF) into a valid PNG using *stored* (uncompressed) zlib blocks; no canvas and no
+  compression dependency, so it runs identically in Node and the browser.
 - **MongoDB Atlas source-profile analysis.** Analysis + a runnable sample fixture under
   `samples/atlas-demo`, with the methodology and the (not-yet-implemented) Atlas tier model
   documented in `docs/ATLAS-SOURCE-PROFILE.md`.
@@ -86,24 +91,19 @@ every release below:
   and let refine change only prose. Regeneration now recomputes every authoritative number from current
   settings (see "Always-current regeneration" above); the determinism boundary is unchanged — the engine
   still owns the math, the LLM still only writes prose.
-- **Redaction policy is SEND-WITH-WARNING.** OCR is best-effort: on failure or low confidence the
-  image stays usable but is flagged, and the rep reviews every redacted preview in Step 3.
-- **Redaction reuses the detection-pass OCR.** When an image is redacted it reuses the words the scan
-  already recognized instead of running OCR a second time (`recognizeWords` is exported from
-  `src/redaction/browser.ts` for exactly this).
-- **Step-advance gate is fail-closed for images.** An `anonBundle` that contains an image is not
-  advance-valid until those images have been reviewed (`stepValidity` / `imagesReviewed` in
-  `src/ui/state.ts`).
+- **Removed the local OCR image-redaction experiment.** The tesseract OCR + canvas redaction module
+  (`src/redaction/`), its self-hosted WASM assets, the `tesseract.js`/`tesseract.js-core` dependencies,
+  and the Step-3 "scan images for hidden text" step were all removed. Real-world dark-theme dashboards
+  garbled the OCR, and the WASM+canvas path could not be CI-verified. Images now go to vision **as-is**
+  with a per-image rep-review gate (see *Added*). Text anonymization is unchanged.
 
 ### Fixed
 
 - **OOM guards on PDF image decode.** pdf.js is given a `maxImageSize` so a crafted PDF can't force a
   giant decode, with a second pixel-cap check after decode as a backstop.
 - **Per-page timeout race** (`PDF_IMAGE_EXTRACT_MS`, 20s) so a stuck pdf.js object can't wedge ingest.
-- **Correct image targeting.** OCR cache, preview, and exclude state are keyed by primitive index
-  (not by source), so two images sharing one source file can't redact the wrong one.
-- **Honest scan-failure messaging** and **preview object URLs revoked on the error path**, so a throw
-  mid-scan doesn't leak object URLs or leave a misleading "scanned" state.
+- **Correct image targeting.** Image preview/exclude/review state is keyed by primitive index (not by
+  source), so two images sharing one source file stay independent.
 - **Help/About modals no longer collapse** — the modal body is sized to its content with a sensible
   minimum height.
 

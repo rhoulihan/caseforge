@@ -1,9 +1,18 @@
 # Design Spec — CaseForge: Portable AI Sizing & Business-Case Generator
 
-**Date:** 2026-06-04 · **Updated:** 2026-06-07 (current through v0.4.0) · **Status:** Built — public `v0.3.0` released; `v0.4.0` held pending manual OCR verification · **Author:** Rick Houlihan + Claude<br>
+**Date:** 2026-06-04 · **Updated:** 2026-06-07 (current through v0.4.0) · **Status:** Built — public `v0.3.0` released; `v0.4.0` staged · **Author:** Rick Houlihan + Claude<br>
 **One-line:** A self-contained, browser-based app a sales rep extracts and runs locally; it ingests a folder of customer artifacts, uses the rep's own Claude or OpenAI key to reproduce the exact sizing → proposal → business-case workflow we ran by hand, and produces an internal technical review, a customer-facing brief, and a high-level business case, with an assimilate-feedback-and-refine loop.
 
-> **Update note (2026-06-07).** The product is built and named **CaseForge** (Preact + Vite SPA, Go launcher, TypeScript strict, Vitest, pnpm). It shipped publicly as `v0.1.1` → `v0.3.0` (the `v0.3.0` tag folded in an interim `v0.2.0` error-handling milestone); `v0.4.0` is staged but held for a manual in-browser OCR verification CI can't run. This document keeps its original design intent and adds the parts that became real: a local **anonymization** subsystem (the original "confidentiality warning" hardened into a fail-closed detect→map→replace pipeline), an **image-redaction** module, **embedded-image extraction** with a dependency-free PNG encoder, the concrete **seven-step wizard**, app-wide **error handling**, and the **CI/Release** pipeline. Sections updated in place are marked where the original draft and shipped reality differ. The canonical version story lives in `CHANGELOG.md`; sizing math + sources in `docs/SIZING-METHODOLOGY.md`.
+> **Update note (2026-06-07b) — OCR image redaction REMOVED.** A local tesseract OCR + canvas image-redaction
+> subsystem was built during the v0.4.0 cycle (described in §6a/§8a/§15 below) and then **removed before
+> release**: real dark-theme dashboards garbled the OCR and the WASM+canvas path couldn't be CI-verified.
+> The current policy is that **images are sent to the AI's vision model AS-IS** — CaseForge does not scrub
+> image pixels — with a prominent warning and a fail-closed *per-image acknowledge* gate in Step 3 (the rep
+> reviews each image and may exclude it). Text anonymization is unchanged, and any name the vision model
+> reads *out of* an image is still slug-anonymized in the prose. Sections §6a/§8a/§15 are kept for the design
+> record but marked superseded by this note. With the OCR path gone, v0.4.0 has no CI-unverifiable blocker.
+>
+> **Update note (2026-06-07).** The product is built and named **CaseForge** (Preact + Vite SPA, Go launcher, TypeScript strict, Vitest, pnpm). It shipped publicly as `v0.1.1` → `v0.3.0` (the `v0.3.0` tag folded in an interim `v0.2.0` error-handling milestone); `v0.4.0` is staged (an OCR image-redaction experiment was built then removed — see the OCR-removal note above). This document keeps its original design intent and adds the parts that became real: a local **anonymization** subsystem (the original "confidentiality warning" hardened into a fail-closed detect→map→replace pipeline), an **image-redaction** module, **embedded-image extraction** with a dependency-free PNG encoder, the concrete **seven-step wizard**, app-wide **error handling**, and the **CI/Release** pipeline. Sections updated in place are marked where the original draft and shipped reality differ. The canonical version story lives in `CHANGELOG.md`; sizing math + sources in `docs/SIZING-METHODOLOGY.md`.
 
 ---
 
@@ -65,7 +74,7 @@ Field reps need to size a non-Oracle workload onto Oracle Autonomous Database (A
 │  Orchestrator (src/orchestrate) ─drives─► pipeline stages, token/cost budget, gate       │
 │     │                                                                                    │
 │  Ingest (content sniff + container extractors + embedded-image extraction + PNG encoder) │
-│     → Anonymize (local detect → rep-approved map → launcher slug replace; image OCR gate)│
+│     → Anonymize (local detect → rep-approved map → launcher slug replace; per-image review)│
 │     → Classify/Triage (heuristics + numeric stats + LLM vision/text) → Evidence Bundle   │
 │     │                                                                                    │
 │  Source Profile (MongoDB): signal schema · sizing model · prompt templates · cost model  │
@@ -75,7 +84,6 @@ Field reps need to size a non-Oracle workload onto Oracle Autonomous Database (A
 │  Doc renderer → 3 outputs + claims checklist (HTML + print-to-PDF)   Refine module       │
 │     │                                                                                    │
 │  Provider adapter ──HTTPS──► Claude OR OpenAI (vision, web-search tool, JSON, BYO-key)    │
-│  Redaction module (tesseract.js OCR + canvas paint, code-split, fully offline)           │
 └─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -120,7 +128,7 @@ Anonymization is a discrete pipeline stage and the **Anonymize** wizard step, ru
 The map's TSV format is kept byte-identical between the TS builder (`src/anon/mapping.ts`) and the Go replacer (`launcher/anon/mapio.go`) so the same map round-trips in either.
 
 ### 6b. Embedded-image extraction + PNG encoder — *new in v0.4.0*
-PII is often baked into a chart or screenshot, which the LLM's vision model will happily read. So ingest now **extracts embedded raster images** as image primitives, making them reviewable: `.msg` image attachments, OOXML media (`(word|ppt|xl)/media/*`), and PDF image XObjects. PDF images are decoded by pdf.js to raw pixel buffers and re-encoded to PNG by a **dependency-free PNG encoder** (`src/ingest/png.ts`) that wraps the pixels in *stored* (uncompressed) zlib blocks with hand-computed CRC32/Adler32 — no canvas, no compression dependency, identical in Node and the browser (RGBA is composited onto white so transparent chart backgrounds read correctly for OCR). pdf.js is given a `maxImageSize` (OOM guard) plus a per-page timeout race (`PDF_IMAGE_EXTRACT_MS`, 20 s) so a stuck object can't wedge ingest; a post-decode pixel cap is a backstop. Known gaps (inline images, image masks, JPXDecode-only) are documented in-code.
+PII is often baked into a chart or screenshot, which the LLM's vision model will happily read. So ingest now **extracts embedded raster images** as image primitives, making them reviewable: `.msg` image attachments, OOXML media (`(word|ppt|xl)/media/*`), and PDF image XObjects. PDF images are decoded by pdf.js to raw pixel buffers and re-encoded to PNG by a **dependency-free PNG encoder** (`src/ingest/png.ts`) that wraps the pixels in *stored* (uncompressed) zlib blocks with hand-computed CRC32/Adler32 — no canvas, no compression dependency, identical in Node and the browser (RGBA is composited onto white so transparent chart backgrounds read correctly for the vision model). pdf.js is given a `maxImageSize` (OOM guard) plus a per-page timeout race (`PDF_IMAGE_EXTRACT_MS`, 20 s) so a stuck object can't wedge ingest; a post-decode pixel cap is a backstop. Known gaps (inline images, image masks, JPXDecode-only) are documented in-code.
 
 ## 7. Classify / triage (the new, essential stage)
 Maps heterogeneous primitives onto **what the sizing needs**, regardless of source format (`src/classify/`).
@@ -128,7 +136,7 @@ Maps heterogeneous primitives onto **what the sizing needs**, regardless of sour
 - **Triage** (`src/classify/triage.ts`) assigns every primitive a semantic role and binds it to schema signals:
   - **Heuristics** (`heuristics.ts`) for the obvious (a CSV with a timestamp + numeric columns → a metric series; a formula-heavy sheet → a sizing/cost model).
   - **Numeric series handled natively** (`stats.ts`): when a signal is available as structured numbers, the JS engine computes avg/peak/P95 directly — *more accurate than reading a chart*.
-  - **Vision** for images/charts: the LLM identifies "this is a System-CPU time-series, ~18% avg / ~45% peak" — the fallback when only a picture exists. (By the time vision runs, the image has been OCR-scanned and redacted — §8a.)
+  - **Vision** for images/charts: the LLM identifies "this is a System-CPU time-series, ~18% avg / ~45% peak" — the fallback when only a picture exists. (Images reach vision as-is; the rep reviews/excludes each in Step 3 — §8a.)
   - **LLM text classification** (`llm.ts`) for ambiguous prose/tables (licensing terms, topology descriptions).
 - **Output → a rep-facing Data Intake & Sufficiency Report** (`sufficiency.ts`), produced before any drafting:
   - **Inventory:** every file found and what the app determined it *is* (or "unrecognized / ignored as noise"), from each `FileReport`.
@@ -141,16 +149,20 @@ Maps heterogeneous primitives onto **what the sizing needs**, regardless of sour
 The wizard (`src/ui/`, `STEPS` in `src/ui/state.ts`) realizes the pipeline as seven steps; `stepValidity` is a pure, unit-tested function that gates advancement.
 1. **Setup** — pick provider (Claude/OpenAI), enter company name + API key (session memory only, never persisted to the launcher), set a token budget.
 2. **Drop files** — folder pick → `ingestAsync` → Evidence Bundle + per-file reports.
-3. **Anonymize** (§6a, §8a) — local detect → rep-approved map → launcher slug replace; **and** the image scan/redact gate. Produces the `anonBundle` (the only thing downstream/LLM sees).
+3. **Anonymize** (§6a, §8a) — local detect → rep-approved map → launcher slug replace; **and** the per-image review gate. Produces the `anonBundle` (the only thing downstream/LLM sees).
 4. **Confirm** — the one mandatory stop: rep reviews the sufficiency report, edits assumptions, answers gaps (cores/node, edition, …), pre-filled with the model's proposed defaults (`src/orchestrate/gate.ts`). The gate **blocks** if a *required* signal is still unmet.
 5. **Generate** — `runPipeline` (`src/orchestrate/index.ts`): triage → apply gate answers → deterministic size → LLM prose (`prose.ts`, determinism boundary intact) → assemble DocModel → render. A **token/cost budget** (`budget.ts`) accumulates usage and guards expensive steps.
 6. **Refine** — preview the deliverables and **regenerate**: re-run the deterministic engine with the *current* config/rates and the current customer discount (reusing the cached triage — no re-classify), then rewrite prose with the refine instruction (§8b). The rep can also adjust the discount, add more files to the case, or jump back to any earlier stage and re-run downstream.
 7. **Export** — HTML + browser print-to-PDF.
 
-### 8a. Step 3 is a two-step, fail-closed gate — *new in v0.4.0*
-When the bundle contains images, Step 3 splits in two and the step-advance gate fails closed (`stepValidity`: an `anonBundle` containing an image is **not** advance-valid until `imagesReviewed`):
-- **Scan images for hidden text** (gated *before* Anonymize): a local OCR pass (`recognizeWords`) runs over every image, the recognized words are folded into the rep-approved candidate map (each image-derived phrase **badged to its source image** via `detectCandidatesInImage` + `mergeDetected`), and the OCR words are cached **by primitive index** (not source — two images can share a source file).
-- **Anonymize & review**: text primitives are slug-replaced via the launcher; images are redacted by painting opaque boxes over matched phrases (reusing the cached OCR — no second scan), and each redacted image is surfaced for the rep to review and optionally exclude from the vision pass. On a mid-scan failure the rep gets honest messaging and the preview object URLs are revoked.
+### 8a. Step 3 image handling — *superseded; see the OCR-removal update note above*
+> The two-step *scan-then-redact* gate described here was removed before v0.4.0 (the OCR garbled real
+> dashboards). The current Step 3: text primitives are slug-replaced via the launcher; **images are sent to
+> vision AS-IS** (no scrubbing). Step 3 shows a preview of every image that will be sent with a prominent
+> "CaseForge does not scrub images — you are responsible" warning, a per-image *send this image to the AI*
+> exclude, and a fail-closed **per-image acknowledge** ("I have reviewed this image — it's safe to send").
+> `stepValidity` requires every to-be-sent image acknowledged (`imageReviewKeys` ⊆ `imageAcknowledgedIds`,
+> `src/ui/state.ts`) before advancing. Excluding an image drops it from the gate.
 
 ### 8b. Customer discount, always-current regeneration & business-case archives — *new in v0.4.0 (staged)*
 Three coupled additions, designed in their own specs and summarized here:
@@ -162,7 +174,7 @@ Three coupled additions, designed in their own specs and summarized here:
 The full mechanics live in [Customer Discount & Always-Current Regeneration](./2026-06-07-discount-and-live-regeneration-design.md) and [Business-Case Archives](./2026-06-07-business-case-archives-design.md).
 
 ## 9. Source Profile (MongoDB v1) — the extension seam
-A profile (`src/profile/`) bundles: the **signal schema** (§7), the **sizing/TCO model** (ported `sizing_calc.py`/`tco_calc.py` → `src/engine/`), the **prompt templates** for analysis/generation, the **assumptions schema + defaults**, the **cost components & web-search queries**, and the **doc templates**. Adding PostgreSQL/MySQL/SQL Server later = a new profile implementing the same interface; ingest, anonymize, redaction, classify, adapter, engine, renderer, and refine loop are reused unchanged. A MongoDB **Atlas source-profile analysis** path + sample fixture (`samples/atlas-demo`) is documented in `docs/ATLAS-SOURCE-PROFILE.md`.
+A profile (`src/profile/`) bundles: the **signal schema** (§7), the **sizing/TCO model** (ported `sizing_calc.py`/`tco_calc.py` → `src/engine/`), the **prompt templates** for analysis/generation, the **assumptions schema + defaults**, the **cost components & web-search queries**, and the **doc templates**. Adding PostgreSQL/MySQL/SQL Server later = a new profile implementing the same interface; ingest, anonymize, classify, adapter, engine, renderer, and refine loop are reused unchanged. A MongoDB **Atlas source-profile analysis** path + sample fixture (`samples/atlas-demo`) is documented in `docs/ATLAS-SOURCE-PROFILE.md`.
 
 ## 10. Outputs
 - **High-level business case** (`renderBusinessCase`) — TCO comparison + charts + the blue/green narrative.
@@ -179,7 +191,7 @@ All rendered HTML with embedded house-style SVGs; PDF via browser print. Rendere
 > **Update note.** The original draft assumed a `data.json` analog; the shipped engine centralizes the *constants* in `config.ts` (engine functions default to `ENGINE_CONFIG` but accept overrides, so tests and a future Atlas profile can vary one knob without forking the math). Changing a default moves the golden-test numbers by design.
 
 ## 12. Confidentiality, key handling, errors
-- **Confidentiality (D6).** The chosen retention posture is shown in the UI; provider calls default to zero-retention / no-train endpoints. **The anonymized content is the only thing that leaves the machine** — text is slug-replaced by the launcher and images are OCR-redacted (§6a, §8a) before any AI call. Documents are parsed locally.
+- **Confidentiality (D6).** The chosen retention posture is shown in the UI; provider calls default to zero-retention / no-train endpoints. **Text is slug-replaced by the launcher before any AI call.** Images are the exception: they are sent to the vision model **as-is** after a per-image human review (§8a) — CaseForge does not scrub image pixels, so the rep excludes or pre-redacts any image carrying sensitive content. A name the model reads out of an image is still slug-anonymized in the prose. Documents are parsed locally.
 - **Key handling.** Entered in Setup, held in session memory only (the wizard carries a `hasApiKey` flag, never the key), sent only to the provider; never to the launcher or any Oracle endpoint.
 - **Errors (v0.3.0).** App-wide error handling with breadcrumb logging (`src/ui/ErrorContext.tsx`, `ErrorBoundary.tsx`) and an **error-report dialog** that composes a report to `rick.houlihan@oracle.com` via Outlook web compose with a `mailto` fallback. Ingest produces **per-file reports with error categories** (`unsupported_format`, `malformed_file`, `extractor_error`, `file_too_large`) rather than failing silently; partial results are preserved. **Help/FAQ** and **About** modals ship in-app (About links to `docs/SIZING-METHODOLOGY.md` on the canonical repo).
 
@@ -188,42 +200,42 @@ All rendered HTML with embedded house-style SVGs; PDF via browser print. Rendere
 caseforge/
   bin/caseforge(.exe)   ← Go static server + browser opener (per-OS)
   app/ (dist/)          ← built static SPA (index.html + bundled JS/CSS, no CDN)
-  public/tesseract/     ← self-hosted tesseract WASM + traineddata (fully offline)
   samples/              ← demo + golden fixture (incl. atlas-demo)
   README                ← extract, run `caseforge serve --app-dir app`, paste key, point at a folder
 ```
-`scripts/run-local.sh` runs the whole thing locally; `scripts/setup-tesseract-assets.mjs` assembles the offline OCR assets (run by `dev`/`build`). The same SPA can also be hosted at a URL from one codebase. Versioned zips per release.
+`scripts/run-local.sh` runs the whole thing locally. The same SPA can also be hosted at a URL from one codebase. Versioned zips per release.
 
 ## 14. Tech stack
 - **Launcher:** Go (single static binary per OS, stdlib only; trivial cross-compile; no runtime). `caseforge serve` (127.0.0.1 SPA + anonymize endpoints) and the `anonymize`/`deanonymize` directory-mode CLI.
-- **SPA:** **Preact + Vite**, TypeScript strict, built to static output in `dist/`. Vendored libs (no CDN, for offline/local): `@kenjiuno/msgreader` (`.msg`), `exceljs` (`.xlsx`), `unpdf`/pdf.js (PDF), `jszip` (OOXML), `postal-mime` (`.eml`), `tesseract.js` v7 + `tesseract.js-core` (offline OCR, code-split). Provider calls are thin fetch wrappers behind the `LLM` interface.
-- **Tests:** Vitest (486 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
+- **SPA:** **Preact + Vite**, TypeScript strict, built to static output in `dist/`. Vendored libs (no CDN, for offline/local): `@kenjiuno/msgreader` (`.msg`), `exceljs` (`.xlsx`), `unpdf`/pdf.js (PDF), `jszip` (OOXML), `postal-mime` (`.eml`). Provider calls are thin fetch wrappers behind the `LLM` interface.
+- **Tests:** Vitest (500 TS test cases at time of writing) + Go tests for the launcher. **pnpm**, Node ≥ 20.
 - **No build step at runtime** — the shipped artifact is static files.
 
-## 15. Image redaction module — *new in v0.4.0 (staged)*
-`src/redaction/` is the local, offline OCR-redaction subsystem that keeps PII out of the vision pass. It is split for testability:
-- `match.ts` — **pure** phrase→rectangle matcher (recognized OCR words + the rep's map → boxes to paint), unit-tested under Node.
-- `index.ts` — **pure** orchestrator: OCR (or reuse precomputed words) → match → paint, with the SEND-WITH-WARNING policy (on OCR failure or low confidence the image stays usable but is flagged; the rep reviews every preview).
-- `ocr.ts` / `paint.ts` — tesseract and canvas shims (injected, so the orchestrator is browser-free in tests).
-- `browser.ts` — the code-split browser entry that wires the real shims; it exports `recognizeWords` so the Step-3 detection scan and the redaction pass share one OCR pass (no double scan).
-tesseract WASM is self-hosted under `/tesseract` (assembled by `scripts/setup-tesseract-assets.mjs`) — fully offline, no network. Because tesseract WASM + canvas can't run under CI/jsdom, the v0.4.0 release is **held for a manual in-browser verification** of this path.
+## 15. Image handling — *OCR redaction REMOVED (see the OCR-removal update note above)*
+There is no image-redaction module. `src/redaction/` (a tesseract OCR + canvas paint subsystem), its
+self-hosted WASM assets, and the `tesseract.js` dependencies were removed before v0.4.0 — the OCR garbled
+real dark-theme dashboards and the WASM+canvas path couldn't be CI-verified. **Images are sent to the AI's
+vision model unmodified**, gated by a per-image human review/acknowledge step (§8a). The determinism boundary
+and text anonymization are unchanged; a name the vision model reads out of an image is still slug-anonymized
+in the prose (the image-derived qualitative-context slugger, `src/classify/triage.ts`). The rep is
+responsible for excluding or pre-redacting any image whose pixels carry content they don't want shared.
 
 ## 16. Extensibility
-New source DB = new Source Profile (signal schema + model + templates + cost queries). Ingest, anonymize, redaction, classify, adapter, engine harness, renderer, refine loop, and launcher are profile-agnostic and reused.
+New source DB = new Source Profile (signal schema + model + templates + cost queries). Ingest, anonymize, classify, adapter, engine harness, renderer, refine loop, and launcher are profile-agnostic and reused.
 
 ## 17. Testing & CI/Release
-- Pure-function unit tests for the sizing/TCO engine, the chart generator, the anonymization map, the PNG encoder, the redaction matcher, and `stepValidity`.
+- Pure-function unit tests for the sizing/TCO engine, the chart generator, the anonymization map, the PNG encoder, and `stepValidity`.
 - Provider adapter behind an injectable transport for orchestrator tests.
 - **A golden end-to-end fixture** (anonymized "Northwind Mutual Insurance") pins the sizing and business-case numbers; `*.golden.test.ts` files fail if the engine drifts.
 - **CI** (`.github/workflows/ci.yml`): `build-test` runs `lint → typecheck → test → build` (pnpm); `launcher` runs `go vet → go test → go build`.
-- **Release** (`.github/workflows/release.yml`): tagging `vX.Y.Z` publishes per-OS launcher zips. Current `package.json` version is `0.3.0`; the embedded-image/OCR-gate work is staged for `v0.4.0`, **held pending the manual OCR verification** above.
+- **Release** (`.github/workflows/release.yml`): tagging `vX.Y.Z` publishes per-OS launcher zips. Current `package.json` version is `0.3.0`; v0.4.0 is staged (the OCR-redaction experiment was removed — no CI-unverifiable blocker).
 
 ## 18. Open questions (carried / resolved)
 - App name — **resolved: CaseForge.**
 - Exact model defaults per provider and how the model list is updated — defaults live in config (`claude-opus-4-8`); revisit per Claude API reference at build time.
 - Verification depth default (single vs dual pass) and its token budget — open.
 - ~~How much project state to persist and where — currently session-only; persistence is open.~~ **Resolved (v0.4.0):** launcher-managed business-case archives under `~/CaseForge/archives/*.zip` (§8b); the API key remains session-only and is never archived.
-- Multi-profile / IDN-name detection / explicit OCR-worker termination — tracked as non-blocking follow-ups.
+- Multi-profile / IDN-name detection — tracked as non-blocking follow-ups.
 
 ## 19. Milestones (status)
 1. ~~**Spike** the risks (web-search BYO-key, vision cost, print-PDF, `.msg`).~~ Done.
@@ -231,5 +243,5 @@ New source DB = new Source Profile (signal schema + model + templates + cost que
 3. ~~**Provider adapter + analyze/generate** for both providers.~~ Done.
 4. ~~**Three outputs + claims checklist + refine loop.**~~ Done.
 5. ~~**Packaging**: Go launcher + zip + samples; optional hosted build.~~ Done.
-6. ~~**Hardening**: anonymization, error handling, broadened ingest, image OCR redaction, embedded-image extraction.~~ Done through v0.3.0; v0.4.0 staged (also adds the customer discount, always-current regeneration, and business-case archives — §8b).
-7. **Manual OCR verification** → cut `v0.4.0`. Pending.
+6. ~~**Hardening**: anonymization, error handling, broadened ingest, embedded-image extraction.~~ Done through v0.3.0; v0.4.0 staged (also adds the customer discount, always-current regeneration, and business-case archives — §8b).
+7. **Cut `v0.4.0`** (the OCR-redaction experiment was removed, clearing the CI-unverifiable blocker). Pending.
