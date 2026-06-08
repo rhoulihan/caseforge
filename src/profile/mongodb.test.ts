@@ -5,12 +5,14 @@ const signals = MONGODB_PROFILE.signalSchema.signals;
 const required = signals.filter((s) => s.criticality === 'required');
 
 describe('MONGODB_PROFILE signal schema', () => {
-  it('has exactly 6 required signals mapping 1:1 to every SizingInputs field', () => {
-    expect(required).toHaveLength(6);
-    const slots = required.map((s) => s.engineSlot).sort();
+  it('has exactly 7 required signals: 6 mapping 1:1 to every SizingInputs field + data.storageSizeGb (no engineSlot)', () => {
+    expect(required).toHaveLength(7);
+    // The 6 compute-required signals each map to an engineSlot; storage drives TCO/cost but not ECPU.
+    const slots = required.filter((s) => s.engineSlot !== undefined).map((s) => s.engineSlot).sort();
     expect(slots).toEqual(
       ['hoVcpu', 'drVcpu', 'shards', 'util.dr', 'util.hoSec', 'util.primary'].sort(),
     );
+    expect(required.find((s) => s.id === 'data.storageSizeGb')?.engineSlot).toBeUndefined();
   });
 
   it('marks defaultable:false only on the three signals whose absence makes any ECPU number impossible', () => {
@@ -48,8 +50,10 @@ describe('MONGODB_PROFILE signal schema', () => {
     expect(new Set(all).size).toBe(all.length);
   });
 
-  it('gives every required signal at least one engineSlot and ids are unique', () => {
-    expect(required.every((s) => typeof s.engineSlot === 'string' && s.engineSlot.length > 0)).toBe(true);
+  it('gives every compute-required signal an engineSlot; storage (data.storageSizeGb) deliberately has none; ids are unique', () => {
+    // data.storageSizeGb is required (blocks if missing) but feeds TCO, not ECPU — it has no engineSlot by design.
+    const computeRequired = required.filter((s) => s.id !== 'data.storageSizeGb');
+    expect(computeRequired.every((s) => typeof s.engineSlot === 'string' && s.engineSlot.length > 0)).toBe(true);
     const ids = signals.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
   });

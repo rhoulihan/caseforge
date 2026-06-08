@@ -13,7 +13,7 @@ function mk(signalId: string, value: SignalValue, confidence: number, method: De
 function triageOf(bindings: BindingResult[]): TriageResult {
   return { profileId: 'mongodb', inventory: [], bindings };
 }
-const REQUIRED = ['cluster.shardCount', 'node.hoVcpu', 'node.drVcpu', 'util.primary', 'util.hoSec', 'util.dr'];
+const REQUIRED = ['cluster.shardCount', 'node.hoVcpu', 'node.drVcpu', 'util.primary', 'util.hoSec', 'util.dr', 'data.storageSizeGb'];
 const scalarsSatisfied = (): BindingResult[] => [
   mk('cluster.shardCount', 3, 1, 'keyvalue'),
   mk('node.hoVcpu', 32, 1, 'keyvalue'),
@@ -36,6 +36,12 @@ describe('buildSufficiencyReport — verdict tiers', () => {
     expect(r.verdict.tier).toBe('blocked');
     const blocking = r.whatToCollect.filter((w) => w.severity === 'blocking');
     expect(blocking.map((w) => w.signalId).sort()).toEqual([...REQUIRED].sort());
+  });
+
+  it('(2b) all compute-required satisfied but data.storageSizeGb absent -> blocked', () => {
+    const r = buildSufficiencyReport(triageOf(allRequiredSatisfied()), [], MONGODB_PROFILE);
+    expect(r.verdict.tier).toBe('blocked');
+    expect(r.verdict.limitingSignals).toContain('data.storageSizeGb');
   });
 
   it('(2) all required + storage native high-confidence -> engineering-grade, nothing to collect', () => {

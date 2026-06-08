@@ -16,7 +16,7 @@ const topology: KeyValuePrimitive = {
     'cores per node': '32',
     'dr cores': '16',
     'logical data size': '1000',
-    'storage size': '300',
+    'storage size': '45800',
   },
 };
 const img = (source: string): ImagePrimitive => ({ kind: 'image', source, mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
@@ -114,6 +114,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
                 { kind: 'avgPeak', panelLabel: 'System CPU node-1', signalId: 'util.primary', avgPct: 0.35, peakPct: 0.9, numericValue: null, strValue: null, confidence: 0.85 },
                 { kind: 'avgPeak', panelLabel: 'System CPU node-2', signalId: 'util.primary', avgPct: 0.2, peakPct: 0.5, numericValue: null, strValue: null, confidence: 0.85 },
                 { kind: 'avgPeak', panelLabel: 'System CPU node-3', signalId: 'util.primary', avgPct: 0.1, peakPct: 0.3, numericValue: null, strValue: null, confidence: 0.85 },
+                { kind: 'scalar', panelLabel: 'On-disk storage size (GB)', signalId: 'data.storageSizeGb', numericValue: 45800, strValue: null, avgPct: null, peakPct: null, confidence: 0.9 },
               ],
               qualContext: [{ text: 'CF_ORG_01 needs payback under two years', category: 'concern' }],
             }),
@@ -134,7 +135,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
     const { result } = await triage(bundle, MONGODB_PROFILE, llm, 'claude-opus-4-8');
     const report = buildSufficiencyReport(result, bundle.files, MONGODB_PROFILE);
 
-    expect(report.verdict.tier).toBe('engineering-grade'); // was BLOCKED (5/6 missing); vision reads now clear the 0.70 floor
+    expect(report.verdict.tier).toBe('engineering-grade'); // was BLOCKED (6/7 missing before vision + storage promotion); vision reads now clear the 0.70 floor
     const { inputs, missing } = toSizingInputs(result.bindings, MONGODB_PROFILE);
     expect(missing).toEqual([]);
     expect(inputs!.shards).toBe(3);

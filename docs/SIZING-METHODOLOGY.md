@@ -82,9 +82,12 @@ CaseForge never silently guesses. Each required signal is classified by how it w
 intake is graded:
 
 - **Blocked** — a required signal is missing; the report lists exactly what to ask the customer for.
+  On-disk compressed storage (`data.storageSizeGb`) is one such required signal — the cost case is
+  blocked until it is provided.
 - **Directional estimate** — enough to size, but some required inputs rest on assumptions or fuzzy
   (heuristic) evidence that sits below the engineering bar. A signal that defaults to an assumption can
-  never be graded engineering-grade.
+  never be graded engineering-grade — including a storage size typed at the gate rather than read from
+  an artifact, which is recorded as a flagged assumption and holds the case at directional.
 - **Engineering-grade** — every required signal is read with confidence at or above the bar, whether from
   native structured data **or a confident read of a chart/screenshot**. A clear vision read of a value is
   treated as engineering-grade — it is as good as reading the number off the source itself.
@@ -94,9 +97,10 @@ presented as authoritative without the rep confirming it.
 
 ## 6. Data sources
 
-- **Customer workload telemetry** — topology (shards, vCPU per node, DR cores) and utilization
-  (average / peak / P95), parsed locally from the artifacts the customer provides. Only the rep-approved,
-  anonymized content ever reaches the AI.
+- **Customer workload telemetry** — topology (shards, vCPU per node, DR cores), utilization
+  (average / peak / P95), and on-disk compressed data size (`data.storageSizeGb`), parsed locally from the
+  artifacts the customer provides. Logical data size (`data.logicalSizeGb`), when present, serves as a
+  corroborating signal. Only the rep-approved, anonymized content ever reaches the AI.
 - **Oracle ADB list pricing** — ECPU and storage rates used for the ADB cost lines. These are researched
   at run time (and confirmed by the rep) or supplied as the `ENGINE_CONFIG.adb` defaults.
 - **On-prem TCO inputs** — license / hardware / storage / facility / labor / backup. The values shipped in

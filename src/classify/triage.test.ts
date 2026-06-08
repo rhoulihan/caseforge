@@ -28,7 +28,7 @@ const utilTable: TablePrimitive = {
 const topology: KeyValuePrimitive = {
   kind: 'keyvalue',
   source: 'topology.txt',
-  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16' },
+  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '300' },
 };
 const northwindBundle: EvidenceBundle = { primitives: [topology, utilTable], files: [] };
 

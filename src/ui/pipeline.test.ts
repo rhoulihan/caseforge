@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildRunConfig, dataGbFromTriage, tcoProfileFromState, DEFAULT_TCO_INPUTS } from './pipeline';
+import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from './pipeline';
 import { initialWizardState, type WizardState } from './state';
 import type { TriageResult } from '../classify/types';
 import type { EvidenceBundle } from '../ingest/types';
@@ -12,6 +12,10 @@ const triage = {
   bindings: [
     { signalId: 'cluster.shardCount', value: 3, method: 'keyvalue', confidence: 1, evidence: [] },
     { signalId: 'node.hoVcpu', value: 32, method: 'keyvalue', confidence: 1, evidence: [] },
+    { signalId: 'node.drVcpu', value: 16, method: 'keyvalue', confidence: 1, evidence: [] },
+    { signalId: 'util.primary', value: { avgPct: 0.18, peakPct: 0.45 }, method: 'numeric-series', confidence: 0.95, evidence: [] },
+    { signalId: 'util.hoSec', value: { avgPct: 0.12, peakPct: 0.35 }, method: 'numeric-series', confidence: 0.95, evidence: [] },
+    { signalId: 'util.dr', value: { avgPct: 0.08, peakPct: 0.2 }, method: 'numeric-series', confidence: 0.95, evidence: [] },
     { signalId: 'data.storageSizeGb', value: 2000, method: 'numeric-series', confidence: 1, evidence: [] },
   ],
 } as unknown as TriageResult;
@@ -28,17 +32,11 @@ function stateWith(over: Partial<WizardState> = {}): WizardState {
   };
 }
 
-describe('dataGbFromTriage', () => {
-  it('reads the storage signal, else falls back', () => {
-    expect(dataGbFromTriage(triage)).toBe(2000);
-    expect(dataGbFromTriage(null, 500)).toBe(500);
-  });
-});
-
 describe('tcoProfileFromState', () => {
-  it('builds a TcoProfile from bound topology signals', () => {
+  it('builds a TcoProfile from the post-gate bound signals (no fabricated topology)', () => {
     const p = tcoProfileFromState(stateWith());
-    expect(p).toMatchObject({ dbType: 'mongodb', shards: 3, hoVcpu: 32, dataCompressedGb: 2000, drPosture: 'warm' });
+    expect(p).toMatchObject({ dbType: 'mongodb', shards: 3, hoVcpu: 32, drVcpu: 16, dataCompressedGb: 2000 });
+    expect(p.drPosture).toBeUndefined(); // dr.posture not bound -> omitted, not fabricated 'warm'
   });
 });
 
@@ -49,7 +47,7 @@ describe('buildRunConfig', () => {
     expect(cfg.companyName).toBe('Northwind Mutual'); // real name (safe — not in the LLM prose context)
     expect(cfg.triage).toBe(triage); // reused, no re-classify
     expect(cfg.budgetLimit).toEqual({ tokens: 250_000 });
-    expect(cfg.rates.dataCompressedGb).toBe(2000);
+    expect('dataCompressedGb' in cfg.rates).toBe(false); // storage threads from the gate, not the rates
     expect(cfg.profile.id).toBe('mongodb');
     expect(typeof cfg.llm!.complete).toBe('function');
   });

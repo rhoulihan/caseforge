@@ -23,9 +23,12 @@ function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer 
   const [avg, setAvg] = useState('');
   const [peak, setPeak] = useState('');
 
-  // A provided value IS the confirmation (a 'manual' measurement, cap 1.0); a blank input clears the answer.
-  // No separate "confirm" checkbox — entering a number is the act of confirming it.
-  const emit = (v: SignalValue | null): void => onAnswer(v === null ? null : { signalId: item.signalId, value: v, confirmed: true });
+  // On-disk storage is the one signal we treat as a flagged ASSUMPTION when typed at the gate (not a
+  // measurement): a value not read from an uploaded artifact must demote the case to a directional
+  // estimate, never engineering-grade. File-derived storage is bound upstream and never reaches here.
+  const isStorage = item.signalId === 'data.storageSizeGb';
+  const emit = (v: SignalValue | null): void =>
+    onAnswer(v === null ? null : { signalId: item.signalId, value: v, confirmed: !isStorage });
   const onNum = (raw: string): void => {
     setVal(raw);
     const n = Number(raw);
@@ -52,9 +55,9 @@ function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer 
             <input type="number" aria-label={`${item.label} peak %`} placeholder="peak %" value={peak} onInput={(e) => onUtil(avg, e.currentTarget.value)} />
           </>
         ) : (
-          <input type="number" aria-label={`${item.label} value`} placeholder="value" value={val} onInput={(e) => onNum(e.currentTarget.value)} />
+          <input type="number" aria-label={`${item.label} value`} data-testid={`gate-input-${item.signalId}`} placeholder="value" value={val} onInput={(e) => onNum(e.currentTarget.value)} />
         )}
-        <span class="cf-hint">Enter the measured value to confirm it.</span>
+        <span class="cf-hint">{isStorage ? 'Enter your best on-disk size estimate — the case will be rated Directional, not Engineering-Grade, until a measured value from a file replaces it.' : 'Enter the measured value to confirm it.'}</span>
       </div>
     </div>
   );

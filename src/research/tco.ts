@@ -25,7 +25,7 @@ export interface TcoProfile {
   drVcpu: number;
   dataCompressedGb: number;
   licenseModel?: LicenseModel;
-  drPosture: DrPostureInput;
+  drPosture?: DrPostureInput;
 }
 
 export const ONPREM_COMPONENTS = ['license', 'hardware', 'storage', 'facility', 'labor', 'backup'] as const;
@@ -74,7 +74,7 @@ export function validateTcoProfile(p: TcoProfile): void {
   if (p.licenseModel !== undefined && !LICENSE_MODELS.includes(p.licenseModel)) {
     throw new TcoResearchValidationError(`invalid licenseModel: ${String(p.licenseModel)}`);
   }
-  if (!DR_POSTURES.includes(p.drPosture)) throw new TcoResearchValidationError(`invalid drPosture: ${String(p.drPosture)}`);
+  if (p.drPosture !== undefined && !DR_POSTURES.includes(p.drPosture)) throw new TcoResearchValidationError(`invalid drPosture: ${String(p.drPosture)}`);
 }
 
 const RANGE_SCHEMA = {
@@ -239,9 +239,12 @@ function computeConfidence(sources: CostSourceRow[], now: number, webSearchUsed:
 
 function buildResearchPrompt(profile: TcoProfile): string {
   const lic = profile.licenseModel ? `${profile.licenseModel} ` : '';
+  const drLine = profile.drPosture
+    ? `, DR posture "${profile.drPosture}"`
+    : ', evaluate both warm-standby and cold (backup-based) DR';
   return [
     `Research CURRENT market cost figures to compare a ${lic}${profile.dbType} on-premises deployment against Oracle Autonomous Database (ADB).`,
-    `Workload topology: ${profile.shards} shard(s), ${profile.hoVcpu} primary vCPU, ${profile.drVcpu} DR vCPU, ${profile.dataCompressedGb} GB compressed data, DR posture "${profile.drPosture}".`,
+    `Workload topology: ${profile.shards} shard(s), ${profile.hoVcpu} primary vCPU, ${profile.drVcpu} DR vCPU, ${profile.dataCompressedGb} GB compressed data${drLine}.`,
     '',
     'Return JSON matching the schema. Provide a low/central/high range in whole USD for EACH of:',
     '- onpremComponents: license, hardware, storage, facility, labor, backup (annual USD/yr).',
