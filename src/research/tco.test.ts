@@ -57,6 +57,9 @@ describe('validateTcoProfile', () => {
   it('rejects a bad licenseModel', () => expect(() => validateTcoProfile({ ...PROFILE, licenseModel: 'free' as never })).toThrow(/licenseModel/));
   it('rejects a bad drPosture', () => expect(() => validateTcoProfile({ ...PROFILE, drPosture: 'hot' as never })).toThrow(/drPosture/));
   it('allows drVcpu of 0 (no DR)', () => expect(() => validateTcoProfile({ ...PROFILE, drVcpu: 0, drPosture: 'none' })).not.toThrow());
+  it('accepts a profile with no drPosture (prompt asks for both postures)', () => {
+    expect(() => validateTcoProfile({ ...PROFILE, drPosture: undefined })).not.toThrow();
+  });
 });
 
 describe('normalizeAndValidate', () => {

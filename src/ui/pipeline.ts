@@ -8,11 +8,13 @@ import type { ClaimInput } from '../render/types';
 import type { TriageResult } from '../classify/types';
 import type { BudgetCheckpoint } from '../orchestrate/budget';
 import type { EcpuStorageRates } from '../render/builders';
-import type { TcoProfile } from '../research/tco';
+import { DR_POSTURES } from '../research/tco';
+import type { TcoProfile, DrPostureInput } from '../research/tco';
 import type { WizardState } from './state';
 import { MONGODB_PROFILE } from '../profile/mongodb';
 import { ENGINE_CONFIG } from '../engine/config';
 import { createLLM } from '../provider';
+import { applyGateAnswers } from '../orchestrate/gate';
 
 const MODEL = 'claude-opus-4-8';
 // Oracle ADB list rates — sourced from the central engine config (edit there when Oracle revises pricing).
@@ -35,25 +37,31 @@ export const DEFAULT_TCO_INPUTS: TcoInputs = {
   migrationPs: { low: 75_000, central: 150_000, high: 300_000 },
 };
 
-function numericBinding(triage: TriageResult | null, signalId: string): number | undefined {
+function enumBinding(triage: TriageResult | null, signalId: string): string | undefined {
   const b = triage?.bindings.find((x) => x.signalId === signalId);
-  return b && typeof b.value === 'number' ? b.value : undefined;
+  return b && typeof b.value === 'string' ? b.value : undefined;
 }
 
-/** On-disk (compressed) data size in GB from triage (the storage signal), else a conservative default. */
-export function dataGbFromTriage(triage: TriageResult | null, fallback = 1000): number {
-  return numericBinding(triage, 'data.storageSizeGb') ?? numericBinding(triage, 'data.logicalSizeGb') ?? fallback;
-}
-
-/** A TcoProfile for researchTcoCosts, built from the bound topology signals (+ defaults). */
+/** A TcoProfile for researchTcoCosts, built from the POST-GATE merged bindings (rep gate answers
+ *  included). Every topology/storage value is rep/file-derived — there is NO fabricated fallback. */
 export function tcoProfileFromState(state: WizardState): TcoProfile {
+  if (!state.anonBundle) throw new Error('cost research needs an uploaded + anonymized bundle');
+  if (!state.triage) throw new Error('cost research needs a completed classification (run Step 4 first)');
+  const merged = applyGateAnswers(state.triage, state.gateAnswers, state.anonBundle.files, MONGODB_PROFILE);
+  if (!merged.inputs || merged.dataCompressedGb === undefined) {
+    throw new Error('cost research needs the gate satisfied (topology + storage)');
+  }
+  const tri = merged.triage;
+  const posture = enumBinding(tri, 'dr.posture');
   return {
     dbType: 'mongodb',
-    shards: numericBinding(state.triage, 'cluster.shardCount') ?? 1,
-    hoVcpu: numericBinding(state.triage, 'node.hoVcpu') ?? 8,
-    drVcpu: numericBinding(state.triage, 'node.drVcpu') ?? 0,
-    dataCompressedGb: dataGbFromTriage(state.triage),
-    drPosture: 'warm',
+    shards: merged.inputs.shards,
+    hoVcpu: merged.inputs.hoVcpu,
+    drVcpu: merged.inputs.drVcpu,
+    dataCompressedGb: merged.dataCompressedGb,
+    ...(posture !== undefined && (DR_POSTURES as readonly string[]).includes(posture)
+      ? { drPosture: posture as DrPostureInput }
+      : {}),
   };
 }
 
