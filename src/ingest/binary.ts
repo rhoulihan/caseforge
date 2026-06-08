@@ -252,6 +252,8 @@ interface MsgData {
   error?: string;
   subject?: string;
   body?: string;
+  bodyHtml?: string; // MAPI 1013001F — unicode HTML body (present when Outlook rich-paste writes prose to HTML only)
+  html?: Uint8Array; // MAPI 10130102 — binary HTML body bytes (fallback if bodyHtml is absent)
   senderName?: string;
   senderEmail?: string;
   recipients?: Array<{ name?: string; email?: string }>;
@@ -270,8 +272,12 @@ export const msgExtractor: AsyncExtractor = async (name, bytes) => {
     const data = reader.getFileData();
     if (data.error) return [];
     const out: Primitive[] = [];
-    const body = (data.body ?? '').trim();
-    if (body) out.push({ kind: 'text', source: name, text: cap(body) });
+    const plain = (data.body ?? '').trim();
+    const htmlSrc = data.bodyHtml && data.bodyHtml.trim()
+      ? data.bodyHtml
+      : data.html && data.html.length ? new TextDecoder().decode(data.html) : '';
+    const bodyText = (plain || (htmlSrc ? htmlToText(htmlSrc) : '')).trim();
+    if (bodyText) out.push({ kind: 'text', source: name, text: cap(bodyText) });
     const pairs: Record<string, string> = {};
     if (data.subject) pairs.subject = data.subject;
     const from = formatAddress(data.senderName, data.senderEmail);

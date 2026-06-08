@@ -165,7 +165,9 @@ export function isNoise(p: Primitive): boolean {
   if (p.kind === 'text') {
     const t = p.text.trim();
     if (t.length === 0) return true;
-    return /^(--\s*$|regards|sincerely|best regards|thanks|thank you|sent from my|confidential|this email|disclaimer)/i.test(t);
+    // A body that contains sizing-relevant facts is NOT noise even if it opens with a greeting/footer.
+    const hasSizingContent = /\d/.test(t) && /\b(shard|replica|vcpu|core|node|cpu|ram|tb|gb|iops|ops|storage|data\s*size|utiliz|backup)\b/i.test(t);
+    return !hasSizingContent && /^(--\s*$|regards|sincerely|best regards|thanks|thank you|sent from my|confidential|this email|disclaimer)/i.test(t);
   }
   return false;
 }

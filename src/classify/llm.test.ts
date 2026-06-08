@@ -134,6 +134,26 @@ describe('classifyText', () => {
     expect(bindings.every((b) => b.method === 'llm-text')).toBe(true);
   });
 
+  it('binds data.storageSizeGb from prose when LLM returns a numeric value (Change 3: llm-text-derivable storage)', async () => {
+    // This test verifies that the parse/bind path accepts a prose storage binding now that
+    // data.storageSizeGb has llm-text in its derivableBy (Change 2) and the LLM is instructed
+    // to GB-normalize (Change 3). The mock simulates the LLM returning 45800 (45.8 TB * 1000).
+    const llm = fixedLLM(
+      JSON.stringify({
+        bindings: [
+          { signalId: 'data.storageSizeGb', valueKind: 'scalar', numericValue: 45800, strValue: null, avgPct: null, peakPct: null, confidence: 0.8 },
+        ],
+        qualContext: [],
+      }),
+    );
+    const prose: TextPrimitive = { kind: 'text', source: 'email.txt', text: 'Data size 45.8 TB' };
+    const { bindings } = await classifyText(llm, prose, schema, 'm');
+    const storage = bindings.find((b) => b.signalId === 'data.storageSizeGb');
+    expect(storage).toBeDefined();
+    expect(storage!.value).toBe(45800);
+    expect(storage!.method).toBe('llm-text');
+  });
+
   it('captures qualitative context with the primitive source injected (not from the LLM)', async () => {
     const llm = fixedLLM(
       JSON.stringify({
