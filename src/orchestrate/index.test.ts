@@ -103,7 +103,7 @@ describe('runPipeline', () => {
   });
 
   it('reuses a caller-precomputed triage instead of re-running it', async () => {
-    const precomputed = await triage(fullBundle, MONGODB_PROFILE); // heuristics-only, no llm
+    const { result: precomputed } = await triage(fullBundle, MONGODB_PROFILE); // heuristics-only, no llm
     const out = await runPipeline({ ...baseConfig(), triage: precomputed });
     expect(out.error).toBeUndefined();
     expect(out.docModel).toBeDefined();

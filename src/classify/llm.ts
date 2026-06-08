@@ -1,10 +1,11 @@
-// The ONLY LLM-touching code in classify. Thin, deterministic wrappers around LLM.complete for
-// the two escalation cases heuristics can't resolve: VISION (read a value off a chart image) and
-// ambiguous PROSE (label a categorical signal). Hard boundary: the LLM only LABELS roles and READS
-// values off pictures/prose — it never computes a stat (stats.ts) or a coverage/tier/total
-// (sufficiency.ts). Confidences are emitted RAW; the per-method cap is applied later in sufficiency.
+// The ONLY LLM-touching code in classify. Two escalation paths heuristics can't resolve:
+//   - readArtifactImage  (VISION): read every panel/field of an artifact image into typed bindings + context;
+//   - classifyText       (TEXT/TABLE): extract clearly-stated signals + context from prose/tables.
+// Hard boundary: the LLM only READS values off pictures/prose — it never computes a stat (stats.ts), a
+// coverage/tier/total (sufficiency.ts), or a tier->vCPU conversion (triage does that). Confidences are
+// emitted RAW; the per-method cap is applied later in sufficiency. Both return { bindings, qualContext, usage }.
 
-import type { LLM, JsonSchema, Usage } from '../provider';
+import type { LLM, Usage } from '../provider';
 import type { ImagePrimitive, TextPrimitive, TablePrimitive } from '../ingest/types';
 import type { SignalSchema, SignalSpec, DerivationMethod } from '../profile/types';
 import type { BindingResult, EvidenceRef, SignalValue } from './types';
@@ -28,131 +29,6 @@ function toBase64(bytes: Uint8Array): string {
   return out;
 }
 
-export const CHART_SCHEMA: JsonSchema = {
-  name: 'chart_reading',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['signalId', 'avgPct', 'peakPct', 'confidence'],
-    properties: {
-      signalId: { type: 'string' },
-      avgPct: { type: 'number' },
-      peakPct: { type: 'number' },
-      confidence: { type: 'number' },
-    },
-  },
-};
-
-export const PROSE_SCHEMA: JsonSchema = {
-  name: 'prose_signals',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    required: ['bindings'],
-    properties: {
-      bindings: {
-        type: 'array',
-        items: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['signalId', 'value', 'confidence'],
-          properties: {
-            signalId: { type: 'string' },
-            value: { type: 'string' },
-            confidence: { type: 'number' },
-          },
-        },
-      },
-    },
-  },
-};
-
-/** Vision: read one chart image into an avgPeak binding. Method 'vision', raw confidence. */
-export async function readChartImage(
-  llm: LLM,
-  img: ImagePrimitive,
-  schema: SignalSchema,
-  model: string,
-): Promise<BindingResult[]> {
-  const visionIds = schema.signals.filter((s) => s.derivableBy.includes('vision')).map((s) => s.id);
-  const res = await llm.complete({
-    model,
-    system: `You are reading a monitoring chart. Identify which ONE of these signals it shows: ${visionIds.join(', ')}. Read its average and peak as 0-1 fractions. Reply as JSON. You only READ what the picture shows — never compute or extrapolate.`,
-    messages: [
-      {
-        role: 'user',
-        content: 'Identify the signal in this chart and read its average and peak.',
-        images: [{ mediaType: img.mime, dataBase64: toBase64(img.bytes) }],
-      },
-    ],
-    jsonSchema: CHART_SCHEMA,
-  });
-  let parsed: { signalId?: unknown; avgPct?: unknown; peakPct?: unknown; confidence?: unknown };
-  try {
-    parsed = JSON.parse(res.text);
-  } catch {
-    return [];
-  }
-  if (typeof parsed.signalId !== 'string') return [];
-  const sig = schema.signals.find((s) => s.id === parsed.signalId);
-  if (!sig || sig.valueKind !== 'avgPeak') return []; // vision only reads avgPeak signals (util/iops/ops/concurrency)
-  const avgPct = Number(parsed.avgPct);
-  const peakPct = Number(parsed.peakPct);
-  // The LLM only READS values off the chart — reject anything that is not a 0-1 fraction (NaN, negative, >1).
-  if (!Number.isFinite(avgPct) || !Number.isFinite(peakPct) || avgPct < 0 || avgPct > 1 || peakPct < 0 || peakPct > 1) {
-    return [];
-  }
-  return [
-    {
-      signalId: parsed.signalId,
-      value: { avgPct, peakPct },
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.6,
-      method: 'vision',
-      evidence: [{ source: img.source, primitiveKind: 'image' }],
-    },
-  ];
-}
-
-/** Ambiguous prose/table -> categorical (enum) binds. Method 'llm-text', raw confidence. */
-export async function classifyProse(
-  llm: LLM,
-  p: TextPrimitive | TablePrimitive,
-  schema: SignalSchema,
-  model: string,
-): Promise<BindingResult[]> {
-  const text = p.kind === 'text' ? p.text : p.rows.map((r) => r.join(' ')).join('\n');
-  const enumIds = schema.signals.filter((s) => s.valueKind === 'enum').map((s) => s.id);
-  const res = await llm.complete({
-    model,
-    system: `Extract any of these categorical signals that the text clearly states: ${enumIds.join(', ')}. Reply JSON {"bindings":[{"signalId","value","confidence"}]}. Only label what the text states — never infer numbers.`,
-    messages: [{ role: 'user', content: text }],
-    jsonSchema: PROSE_SCHEMA,
-  });
-  let parsed: { bindings?: unknown };
-  try {
-    parsed = JSON.parse(res.text);
-  } catch {
-    return [];
-  }
-  const arr = Array.isArray(parsed.bindings) ? (parsed.bindings as Array<Record<string, unknown>>) : [];
-  return arr
-    .filter(
-      (b) => b && typeof b.signalId === 'string' && schema.signals.some((s) => s.id === b.signalId && s.valueKind === 'enum'),
-    )
-    .map((b) => ({
-      signalId: b.signalId as string,
-      value: String(b.value),
-      confidence: typeof b.confidence === 'number' ? b.confidence : 0.6,
-      method: 'llm-text' as const,
-      evidence: [{ source: p.source, primitiveKind: p.kind }],
-    }));
-}
-
-// ---- Comprehensive extraction: every artifact (image + text) -> typed signal bindings + qual context ----
-// These replace the narrow readChartImage/classifyProse (still exported above until triage migrates).
-// The LLM only READS values; tier codes stay strings (the engine does the vCPU lookup); per-node util
-// panels are role-mapped in TS (assignRoles). The result type is { bindings, qualContext, usage }.
-
 const ROLE_TO_UTIL: Record<RoleToken, string> = { primary: 'util.primary', secondary: 'util.hoSec', dr: 'util.dr' };
 const QUAL_CATEGORIES: readonly string[] = ['concern', 'objection', 'timeline', 'positioning'];
 
@@ -175,11 +51,14 @@ function toBinding(sig: SignalSpec, raw: RawTyped, method: DerivationMethod, evi
   const confidence = Number.isFinite(c) ? clamp01(c) : 0.6;
   let value: SignalValue;
   if (sig.valueKind === 'avgPeak') {
+    // Reject null/absent before Number() — Number(null) is 0, which would pass the range guard as {0,0}.
+    if (raw.avgPct == null || raw.peakPct == null) return null;
     const avg = Number(raw.avgPct);
     const peak = Number(raw.peakPct);
     if (!Number.isFinite(avg) || !Number.isFinite(peak) || avg < 0 || avg > 1 || peak < 0 || peak > 1 || avg > peak) return null;
     value = { avgPct: avg, peakPct: peak };
   } else if (sig.valueKind === 'scalar') {
+    if (raw.numericValue == null) return null; // Number(null) === 0 would bind a bogus 0
     const n = Number(raw.numericValue);
     if (!Number.isFinite(n) || n < 0) return null;
     value = n;
@@ -256,6 +135,7 @@ export async function readArtifactImage(
     if (!sig) continue; // unknown signalId — drop silently
     // Per-node util panels are role-mapped after the loop; collect the validated avg/peak first.
     if (sig.valueKind === 'avgPeak' && sig.id.startsWith('util.')) {
+      if (p.avgPct == null || p.peakPct == null) continue; // Number(null) === 0 would slip a {0,0} util binding through
       const avg = Number(p.avgPct);
       const peak = Number(p.peakPct);
       if (!Number.isFinite(avg) || !Number.isFinite(peak) || avg < 0 || avg > 1 || peak < 0 || peak > 1 || avg > peak) continue;
@@ -267,14 +147,14 @@ export async function readArtifactImage(
     if (b) bindings.push(b);
   }
   if (utilPanels.length) {
-    const { roles, heuristicLabels } = assignRoles(utilPanels.map((u) => ({ panelLabel: u.panelLabel, peakPct: u.peakPct })));
-    const heuristic = new Set(heuristicLabels);
-    for (const u of utilPanels) {
-      const role = roles[u.panelLabel];
-      if (!role) continue;
-      const note = heuristic.has(u.panelLabel) ? 'role assigned by load/positional heuristic — verify the node topology at the gate' : undefined;
+    const { roles, heuristicIndices } = assignRoles(utilPanels.map((u) => ({ panelLabel: u.panelLabel, peakPct: u.peakPct })));
+    const heuristic = new Set(heuristicIndices);
+    utilPanels.forEach((u, i) => {
+      const role = roles[i];
+      if (!role) return;
+      const note = heuristic.has(i) ? 'role assigned by load/positional heuristic — verify the node topology at the gate' : undefined;
       bindings.push({ signalId: ROLE_TO_UTIL[role], value: { avgPct: u.avgPct, peakPct: u.peakPct }, confidence: u.confidence, method: 'vision', evidence, ...(note ? { note } : {}) });
-    }
+    });
   }
   return { bindings, qualContext: parseQualContext(parsed.qualContext, img.source, slug), usage: res.usage };
 }
