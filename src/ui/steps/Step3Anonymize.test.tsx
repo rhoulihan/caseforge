@@ -2,28 +2,6 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/preact';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock the dynamically-imported browser redaction module (real one needs tesseract WASM + canvas).
-// scanImagesForText() uses recognizeWords (detection-time OCR); anonymizeAll() uses redactImageInBrowser.
-const { redactImageInBrowser, recognizeWords } = vi.hoisted(() => ({
-  redactImageInBrowser: vi.fn(
-    async (
-      ...args: [img: { bytes: Uint8Array; mime: string }, map: unknown, company: string, precomputed?: unknown]
-    ): Promise<{ bytes: Uint8Array; mime: string; rectCount: number; meanConfidence: number; redacted: boolean; warning?: string }> => ({
-      bytes: new Uint8Array([9, 9, 9]),
-      mime: args[0].mime,
-      rectCount: 2,
-      meanConfidence: 88,
-      redacted: true,
-    }),
-  ),
-  // OCR returns a hostname that exists ONLY inside the image — it must surface as a reviewable mapping.
-  recognizeWords: vi.fn(async () => ({
-    words: 'Cluster host db.prod.acme.local p99 latency'.split(' ').map((text, i) => ({ text, bbox: { x0: i, y0: 0, x1: i + 1, y1: 1 }, confidence: 90, line: 0 })),
-    meanConfidence: 90,
-  })),
-}));
-vi.mock('../../redaction/browser', () => ({ redactImageInBrowser, recognizeWords }));
-
 import { Step3Anonymize } from './Step3Anonymize';
 import { WizardProvider, useWizard } from '../WizardContext';
 import { ErrorProvider } from '../ErrorContext';
@@ -92,8 +70,7 @@ describe('Step3Anonymize', () => {
   });
 });
 
-describe('Step3Anonymize — image redaction', () => {
-  // A bundle (not just an anonBundle) is required: scanning OCRs the ORIGINAL image bytes.
+describe('Step3Anonymize — images sent as-is (no scrubbing)', () => {
   const imageBundle: EvidenceBundle = {
     files: [{ name: 'deck.pptx', type: 'pptx', ok: true }],
     primitives: [
@@ -102,20 +79,17 @@ describe('Step3Anonymize — image redaction', () => {
     ],
   };
 
-  function ReviewedReadout() {
+  function AckReadout() {
     const { state } = useWizard();
-    return <span data-testid="reviewed">{String(state.imagesReviewed)}</span>;
+    return <span data-testid="ack">{`${state.imageReviewKeys.length}/${state.imageAcknowledgedIds.length}`}</span>;
   }
 
   function setupImages() {
     return render(
       <ErrorProvider>
-        <WizardProvider
-          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }}
-          launcher={mockLauncher}
-        >
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }} launcher={mockLauncher}>
           <Step3Anonymize />
-          <ReviewedReadout />
+          <AckReadout />
         </WizardProvider>
       </ErrorProvider>,
     );
@@ -124,71 +98,36 @@ describe('Step3Anonymize — image redaction', () => {
   beforeEach(() => {
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
-    redactImageInBrowser.mockClear();
-    recognizeWords.mockClear();
   });
 
-  it('gates anonymize until images are scanned for hidden text', async () => {
-    setupImages();
-    await screen.findByText('Acme Mutual'); // text detection ran on mount
-    const anonBtn = screen.getByRole('button', { name: /Anonymize & continue/i }) as HTMLButtonElement;
-    expect(anonBtn.disabled).toBe(true); // image present but not yet scanned → blocked
-    expect(screen.getByText(/Scan the 1 image\(s\) below first/i)).toBeTruthy();
-    expect(screen.getByRole('button', { name: /Scan 1 image\(s\) for hidden text/i })).toBeTruthy();
-  });
-
-  it('OCRs images, folds hidden PII into the rep-approved map, then unblocks anonymize', async () => {
+  it('shows the responsibility warning and does NOT gate anonymize on any scan', async () => {
     setupImages();
     await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 1 image\(s\) for hidden text/i }));
-    await waitFor(() => expect(recognizeWords).toHaveBeenCalledTimes(1));
-    // The hostname that appears ONLY inside the image is now a reviewable mapping entry, badged to its source.
-    await screen.findByText('db.prod.acme.local');
-    expect(screen.getByText(/from\s+image1\.png/i)).toBeTruthy();
-    await waitFor(() => expect((screen.getByRole('button', { name: /Anonymize & continue/i }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.getByText(/scrub text inside images/i)).toBeTruthy(); // rep-responsibility warning
+    expect((screen.getByRole('button', { name: /Anonymize & continue/i }) as HTMLButtonElement).disabled).toBe(false); // no scan gate
   });
 
-  it('redacts each image reusing the cached OCR, shows previews, and marks them reviewed', async () => {
+  it('anonymizes text and surfaces each image preview as-is for review', async () => {
     setupImages();
     await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 1 image\(s\) for hidden text/i }));
-    await screen.findByText('db.prod.acme.local'); // scan finished
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
-    await waitFor(() => expect(redactImageInBrowser).toHaveBeenCalledTimes(1));
-    expect(redactImageInBrowser.mock.calls[0]?.[3]).toBeDefined(); // precomputed OCR words reused — no double scan
-    await screen.findByText(/region\(s\) blacked out/i); // redacted preview caption (rectCount = 2)
-    await waitFor(() => expect(screen.getByTestId('reviewed').textContent).toBe('true'));
+    await screen.findByAltText(/preview of deck.pptx#image1.png/i); // the image is shown unmodified
+    expect(screen.getByTestId('ack').textContent).toBe('1/0'); // one image to review, none acknowledged yet
   });
 
-  it('requires acknowledging each redacted image before continuing (D2)', async () => {
-    function AckReadout() {
-      const { state } = useWizard();
-      return <span data-testid="ack">{`${state.imageReviewKeys.length}/${state.imageAcknowledgedIds.length}`}</span>;
-    }
-    render(
-      <ErrorProvider>
-        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }} launcher={mockLauncher}>
-          <Step3Anonymize />
-          <AckReadout />
-        </WizardProvider>
-      </ErrorProvider>,
-    );
+  it('requires acknowledging each image to be sent before continuing (D2)', async () => {
+    setupImages();
     await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 1 image\(s\) for hidden text/i }));
-    await screen.findByText('db.prod.acme.local');
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
-    await screen.findByText(/region\(s\) blacked out/i);
-    // a review key was captured; nothing acknowledged yet → the count prompt shows
-    await waitFor(() => expect(screen.getByTestId('ack').textContent).toBe('1/0'));
+    await screen.findByAltText(/preview of deck/i);
     expect(screen.getByText(/0 of 1 image\(s\) acknowledged/i)).toBeTruthy();
-    // ticking the per-image acknowledge checkbox records it
     fireEvent.click(screen.getByLabelText(/acknowledge deck/i));
     await waitFor(() => expect(screen.getByTestId('ack').textContent).toBe('1/1'));
-    await screen.findByText(/All 1 image\(s\) reviewed/i);
+    await screen.findByText(/All 1 image\(s\) to be sent have been reviewed/i);
   });
 });
 
-describe('Step3Anonymize — image failure & multi-image paths', () => {
+describe('Step3Anonymize — exclusion (index-keyed, same-source safe)', () => {
   // Two images that SHARE a source — proves identity is keyed by index, not source.
   const twoImageBundle: EvidenceBundle = {
     files: [{ name: 'deck.pptx', type: 'pptx', ok: true }],
@@ -199,20 +138,18 @@ describe('Step3Anonymize — image failure & multi-image paths', () => {
     ],
   };
 
-  function AnonImageCount() {
+  function Probe() {
     const { state } = useWizard();
-    return <span data-testid="anon-imgs">{state.anonBundle ? state.anonBundle.primitives.filter((p) => p.kind === 'image').length : -1}</span>;
+    const imgs = state.anonBundle ? state.anonBundle.primitives.filter((p) => p.kind === 'image').length : -1;
+    return <span data-testid="probe">{`${imgs}|${state.imageReviewKeys.length}`}</span>;
   }
 
   function setupTwo() {
     return render(
       <ErrorProvider>
-        <WizardProvider
-          initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: twoImageBundle }}
-          launcher={mockLauncher}
-        >
+        <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: twoImageBundle }} launcher={mockLauncher}>
           <Step3Anonymize />
-          <AnonImageCount />
+          <Probe />
         </WizardProvider>
       </ErrorProvider>,
     );
@@ -221,41 +158,16 @@ describe('Step3Anonymize — image failure & multi-image paths', () => {
   beforeEach(() => {
     URL.createObjectURL = vi.fn(() => 'blob:x');
     URL.revokeObjectURL = vi.fn();
-    redactImageInBrowser.mockClear();
-    recognizeWords.mockClear();
   });
 
-  it('one image failing OCR does not block the rest: the failure is surfaced and anonymize still unblocks', async () => {
-    recognizeWords.mockRejectedValueOnce(new Error('worker boom')); // first image's OCR throws
+  it('excluding one of two same-source images drops only that image from the bundle AND the ack gate', async () => {
     setupTwo();
     await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 2 image\(s\) for hidden text/i }));
-    await waitFor(() => expect(recognizeWords).toHaveBeenCalledTimes(2)); // both attempted
-    await screen.findByText(/1 of 2 image\(s\) could not be read/i); // honest failure message, not a false success
-    await screen.findByText('db.prod.acme.local'); // the image that DID scan still folded its text in
-    expect((screen.getByRole('button', { name: /Anonymize & continue/i }) as HTMLButtonElement).disabled).toBe(false); // gate still satisfied
-  });
-
-  it('renders the per-image warning when redaction returns one', async () => {
-    redactImageInBrowser.mockResolvedValueOnce({ bytes: new Uint8Array([9]), mime: 'image/png', rectCount: 0, meanConfidence: 40, redacted: false, warning: 'low confidence — eyeball this' });
-    setupTwo();
-    await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 2 image\(s\) for hidden text/i }));
-    await screen.findByText('db.prod.acme.local');
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
-    await screen.findByText(/low confidence — eyeball this/i); // warning surfaced on the preview card
-  });
-
-  it('excluding one of two same-source images drops only that image from the bundle (index-keyed)', async () => {
-    setupTwo();
-    await screen.findByText('Acme Mutual');
-    fireEvent.click(screen.getByRole('button', { name: /Scan 2 image\(s\) for hidden text/i }));
-    await screen.findByText('db.prod.acme.local');
-    fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
-    await waitFor(() => expect(screen.getByTestId('anon-imgs').textContent).toBe('2')); // both images in the bundle
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('2|2')); // both images sent + both need ack
     const sendBoxes = screen.getAllByLabelText(/send this image to the AI/i);
     expect(sendBoxes).toHaveLength(2);
     fireEvent.click(sendBoxes[0]!); // exclude the first image only
-    await waitFor(() => expect(screen.getByTestId('anon-imgs').textContent).toBe('1')); // exactly one dropped, not both
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('1|1')); // exactly one dropped from both
   });
 });

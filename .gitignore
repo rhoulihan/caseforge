@@ -8,9 +8,6 @@ build/
 app/dist/
 *.tsbuildinfo
 
-# Self-hosted tesseract.js OCR assets (assembled at build by scripts/setup-tesseract-assets.mjs)
-public/tesseract/
-
 # Test / coverage
 coverage/
 .vitest/

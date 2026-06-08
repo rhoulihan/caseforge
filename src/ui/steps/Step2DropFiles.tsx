@@ -44,8 +44,9 @@ export function Step2DropFiles() {
           detected: merged,
           map: extendMap(state.map, merged),
           anonBundle: null, // re-anonymize the full combined bundle with the extended map
-          imagesScanned: false,
           imagesReviewed: false,
+          imageReviewKeys: [],
+          imageAcknowledgedIds: [],
           triage: null,
           confirmed: false,
           pipeline: null,
@@ -56,7 +57,7 @@ export function Step2DropFiles() {
       }
 
       // New case (or re-drop): full reset.
-      patch({ bundle: fresh, rawFiles: newRaw, detected: [], map: [], anonBundle: null, imagesScanned: false, imagesReviewed: false, triage: null, confirmed: false, pipeline: null });
+      patch({ bundle: fresh, rawFiles: newRaw, detected: [], map: [], anonBundle: null, imagesReviewed: false, imageReviewKeys: [], imageAcknowledgedIds: [], triage: null, confirmed: false, pipeline: null });
       breadcrumb('info', `ingested ${fresh.files.length} file(s), ${fresh.primitives.length} evidence item(s)`);
       // Skipped/unsupported files are recorded and offered as an error report (the good files still flow through).
       captureFileReports(fresh.files);
