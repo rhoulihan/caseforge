@@ -16,7 +16,7 @@ const topology: KeyValuePrimitive = {
     'cores per node': '32',
     'dr cores': '16',
     'logical data size': '1000',
-    'storage size': '300',
+    'storage size': '45800',
   },
 };
 const img = (source: string): ImagePrimitive => ({ kind: 'image', source, mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });

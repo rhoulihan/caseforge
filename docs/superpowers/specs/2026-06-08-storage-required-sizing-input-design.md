@@ -73,6 +73,13 @@ defaults (`discountPct ?? 0`, `targetPlatform`, `assumptions: []`, `paybackYear 
 `buildTcoSection` / `scenario` / `coldRtoHours` except through a gated storage value. The discount logic
 stops scaling the data size (correct — a volume isn't discounted).
 
+> **Implemented as a sibling field (not inside `SizingInputs`).** During planning the in-`SizingInputs`
+> option proved to couple the ECPU fixture and every `toEqual(NORTHWIND_SIZING)` assertion to a storage
+> value, so `dataCompressedGb` is threaded as a dedicated sibling (`toSizingInputs` returns it alongside
+> `inputs`; it rides `ApplyResult` and `AssembleOptions`). Enforcement is via the required-signal gate (a
+> missing storage blocks) plus the orchestrator guard, rather than the `SizingInputs` type. See the plan's
+> header note.
+
 ### 4.2 Data flow
 
 1. `profile/mongodb.ts` — `data.storageSizeGb` → `criticality: 'required'`, `defaultable: true`,
