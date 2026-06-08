@@ -58,6 +58,12 @@ describe('MONGODB_PROFILE signal schema', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it('data.storageSizeGb derivableBy includes llm-text (Change 2: prose-stated data size is classifiable)', () => {
+    const storage = signals.find((s) => s.id === 'data.storageSizeGb');
+    expect(storage).toBeDefined();
+    expect(storage!.derivableBy).toContain('llm-text');
+  });
+
   it('defines a full set of method caps and tier floors', () => {
     const t = MONGODB_PROFILE.thresholds;
     expect(t.methodCap['numeric-series']).toBe(1);

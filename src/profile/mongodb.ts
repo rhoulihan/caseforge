@@ -92,7 +92,7 @@ const required: SignalSpec[] = [
     criticality: 'required',
     defaultable: true,
     tcoCritical: true,
-    derivableBy: ['keyvalue', 'table-lookup', 'numeric-series', 'vision'],
+    derivableBy: ['keyvalue', 'table-lookup', 'llm-text', 'numeric-series', 'vision'],
     aliases: ['storage size', 'storagesize', 'disk usage', 'compressed data size'],
     // No engineSlot: it doesn't feed the ECPU compute — it feeds the ADB storage cost line, the cold-DR
     // RTO, and the cost-research prompt. It is required because it drives the dominant TCO figure; a

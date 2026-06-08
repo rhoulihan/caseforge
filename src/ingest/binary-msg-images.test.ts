@@ -48,3 +48,4 @@ describe('msgExtractor — image attachments', () => {
     expect(prims.some((p) => p.kind === 'text' && (p as TextPrimitive).text.includes('attached charts'))).toBe(true);
   });
 });
+

@@ -106,7 +106,8 @@ export async function readArtifactImage(
       `For a multi-panel dashboard return ONE entry per panel — never average across panels.\n` +
       `- numeric COUNTS stated anywhere — a label, a table cell, or a sentence: kind="scalar", set numericValue. ` +
       `ALWAYS look for the cluster's shard / data-bearing replica-set count, e.g. "3 shards, each a primary" or ` +
-      `"Number of shards: 3" → signalId "cluster.shardCount", numericValue 3. Also node counts and data size.\n` +
+      `"Number of shards: 3" → signalId "cluster.shardCount", numericValue 3. ` +
+      `Also node counts and data size (express any data size in GB; 1 TB = 1000 GB).\n` +
       `- categorical labels (cluster tier like M80, edition): kind="enum", set strValue. Emit a tier code under ` +
       `signalId "node.atlasTier" (just the code, e.g. "M80") and do NOT convert it to a vCPU number.\n` +
       `Use ONLY these signalIds (never invent one):\n${signalLines(schema, 'vision')}\n` +
@@ -177,7 +178,10 @@ export async function classifyText(
       `Extract sizing signals AND qualitative context from the text.\n` +
       `For signals, use ONLY these signalIds and set valueKind to match:\n${signalLines(schema, 'llm-text')}\n` +
       `- scalar: set numericValue. Always look for a stated shard / data-bearing replica-set count ` +
-      `(e.g. "3 shards" → cluster.shardCount=3) and node counts. enum: set strValue. avgPeak: set avgPct and ` +
+      `(e.g. "3 shards" → cluster.shardCount=3) and node counts. ` +
+      `Also look for the on-disk / compressed data size, expressed in GB — convert from TB (1 TB = 1000 GB), ` +
+      `so "Data size 45.8 TB" → data.storageSizeGb=45800. ` +
+      `enum: set strValue. avgPeak: set avgPct and ` +
       `peakPct as 0-1 fractions (midpoint of a stated range for avg, the upper bound for peak). Emit an Atlas ` +
       `tier code (just the code, e.g. "M80") under signalId "node.atlasTier" as an enum; do NOT convert it to vCPU.\n` +
       `Only extract values the text CLEARLY states — never infer or compute. Set unused value fields to null.\n` +

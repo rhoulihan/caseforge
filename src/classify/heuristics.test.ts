@@ -182,4 +182,28 @@ describe('isNoise', () => {
     expect(isNoise(sig)).toBe(true);
     expect(isNoise(cpu)).toBe(false);
   });
+
+  // Change 4: a body that opens with a greeting/footer but contains sizing facts must NOT be noise
+  it('does NOT discard a body that opens with a greeting but contains sizing facts (Change 4)', () => {
+    const withSizing: TextPrimitive = {
+      kind: 'text',
+      source: 'email.txt',
+      text: 'Thanks for the call. Mongo prod env – 3 shards, Data size 45.8 TB.',
+    };
+    expect(isNoise(withSizing)).toBe(false);
+  });
+
+  it('still discards a pure footer with no sizing content (Change 4 — unchanged behaviour)', () => {
+    const footer: TextPrimitive = {
+      kind: 'text',
+      source: 'footer.txt',
+      text: 'Confidential. This email and any attachments are privileged.',
+    };
+    expect(isNoise(footer)).toBe(true);
+  });
+
+  it('still discards a bare closing with no sizing content (Change 4 — unchanged behaviour)', () => {
+    const closing: TextPrimitive = { kind: 'text', source: 'closing.txt', text: 'Regards, John' };
+    expect(isNoise(closing)).toBe(true);
+  });
 });
