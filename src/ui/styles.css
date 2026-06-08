@@ -432,6 +432,13 @@ body {
   gap: 6px;
   color: var(--cf-slate);
 }
+.cf-imgverify {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-weight: 600;
+}
 
 /* --- Sufficiency verdict + gate --- */
 .cf-verdict {

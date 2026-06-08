@@ -79,9 +79,9 @@ describe('Step3Anonymize — images sent as-is (no scrubbing)', () => {
     ],
   };
 
-  function AckReadout() {
+  function VerifyReadout() {
     const { state } = useWizard();
-    return <span data-testid="ack">{`${state.imageReviewKeys.length}/${state.imageAcknowledgedIds.length}`}</span>;
+    return <span data-testid="verified">{String(state.imagesVerifiedClean)}</span>;
   }
 
   function setupImages() {
@@ -89,7 +89,7 @@ describe('Step3Anonymize — images sent as-is (no scrubbing)', () => {
       <ErrorProvider>
         <WizardProvider initial={{ config: { provider: 'claude', companyName: 'Acme Mutual', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: imageBundle }} launcher={mockLauncher}>
           <Step3Anonymize />
-          <AckReadout />
+          <VerifyReadout />
         </WizardProvider>
       </ErrorProvider>,
     );
@@ -112,18 +112,30 @@ describe('Step3Anonymize — images sent as-is (no scrubbing)', () => {
     await screen.findByText('Acme Mutual');
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
     await screen.findByAltText(/preview of deck.pptx#image1.png/i); // the image is shown unmodified
-    expect(screen.getByTestId('ack').textContent).toBe('1/0'); // one image to review, none acknowledged yet
+    expect(screen.getByTestId('verified').textContent).toBe('false'); // not yet verified clean
   });
 
-  it('requires acknowledging each image to be sent before continuing (D2)', async () => {
+  it('per-image acknowledge checkbox is GONE; bottom verified-clean checkbox is present and patches state', async () => {
     setupImages();
     await screen.findByText('Acme Mutual');
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
     await screen.findByAltText(/preview of deck/i);
-    expect(screen.getByText(/0 of 1 image\(s\) acknowledged/i)).toBeTruthy();
-    fireEvent.click(screen.getByLabelText(/acknowledge deck/i));
-    await waitFor(() => expect(screen.getByTestId('ack').textContent).toBe('1/1'));
-    await screen.findByText(/All 1 image\(s\) to be sent have been reviewed/i);
+
+    // No per-image acknowledge checkbox
+    expect(screen.queryByLabelText(/acknowledge deck/i)).toBeNull();
+
+    // Single bottom gate checkbox present with correct label
+    const verifyCheckbox = screen.getByRole('checkbox', { name: /I have reviewed every image being sent and verified none contains sensitive content/i });
+    expect(verifyCheckbox).toBeTruthy();
+    expect((verifyCheckbox as HTMLInputElement).checked).toBe(false);
+
+    // Ticking it patches imagesVerifiedClean to true
+    fireEvent.click(verifyCheckbox);
+    await waitFor(() => expect(screen.getByTestId('verified').textContent).toBe('true'));
+
+    // Unticking resets it
+    fireEvent.click(verifyCheckbox);
+    await waitFor(() => expect(screen.getByTestId('verified').textContent).toBe('false'));
   });
 });
 
@@ -141,7 +153,8 @@ describe('Step3Anonymize — exclusion (index-keyed, same-source safe)', () => {
   function Probe() {
     const { state } = useWizard();
     const imgs = state.anonBundle ? state.anonBundle.primitives.filter((p) => p.kind === 'image').length : -1;
-    return <span data-testid="probe">{`${imgs}|${state.imageReviewKeys.length}`}</span>;
+    // After exclude, imagesVerifiedClean is reset to false; report sent-image count + verified state
+    return <span data-testid="probe">{`${imgs}|${String(state.imagesVerifiedClean)}`}</span>;
   }
 
   function setupTwo() {
@@ -160,14 +173,14 @@ describe('Step3Anonymize — exclusion (index-keyed, same-source safe)', () => {
     URL.revokeObjectURL = vi.fn();
   });
 
-  it('excluding one of two same-source images drops only that image from the bundle AND the ack gate', async () => {
+  it('excluding one of two same-source images drops only that image from the bundle and resets the verified-clean gate', async () => {
     setupTwo();
     await screen.findByText('Acme Mutual');
     fireEvent.click(screen.getByRole('button', { name: /Anonymize & continue/i }));
-    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('2|2')); // both images sent + both need ack
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('2|false')); // both images sent, not verified
     const sendBoxes = screen.getAllByLabelText(/send this image to the AI/i);
     expect(sendBoxes).toHaveLength(2);
     fireEvent.click(sendBoxes[0]!); // exclude the first image only
-    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('1|1')); // exactly one dropped from both
+    await waitFor(() => expect(screen.getByTestId('probe').textContent).toBe('1|false')); // one image dropped; verified still false
   });
 });
