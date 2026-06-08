@@ -115,11 +115,11 @@ invoice-parse, not research.
 
 > The same fixture also exercises CaseForge's **anonymization** flow. Real-looking names (Meridian Freight
 > Systems, Priya Nair), project/cluster IDs (`meridian-prod`), and regions are candidate phrases the rep
-> approves into the fail-closed map before any AI call. As of the v0.4.0-pending work, ingest also
-> **extracts embedded raster images** and OCRs them for hidden text in Step 3 — so were a topology/CPU
-> screenshot dropped in alongside these text artifacts, any baked-in PII would be detected and blacked out
-> before the image reached the LLM's vision model. The Atlas demo today ships only text/CSV/JSON, so no
-> image scan is triggered, but the profile inherits that protection for free.
+> approves into the fail-closed map before any AI call. Ingest also **extracts embedded raster images** and
+> sends them to the LLM's vision model — but, as of the v0.4.0 work, images are sent **as-is** (the local OCR
+> redaction experiment was removed): Step 3 shows each image and the rep reviews/excludes it, so were a
+> topology/CPU screenshot dropped in alongside these text artifacts, the rep is responsible for ensuring it
+> carries no baked-in PII. The Atlas demo today ships only text/CSV/JSON, so no images are sent.
 
 ## 6. Scope & open decisions
 

@@ -1,7 +1,14 @@
 ---
-Status: Proposed — awaiting approval (2026-06-07). Author: Rick Houlihan + Claude.
+Status: BUILT (PRs #17–#21, staged for v0.4.0). Author: Rick Houlihan + Claude.
 Produced by a hardened design workflow: 3 code maps → 3 independent proposals → 3 adversarial reviews → synthesis.
 Tier→vCPU table source: docs/ATLAS-SOURCE-PROFILE.md §4 (AWS, illustrative; M80=32 anchors to the hand sizing).
+
+UPDATE (2026-06-07b): the local OCR image-redaction feature this spec assumed (the "redact images before
+vision" backstop) was REMOVED before release — it garbled real dashboards and couldn't be CI-verified. Images
+now go to vision AS-IS, gated by a per-image human acknowledge ("I have reviewed this image — it's safe to
+send"). The leak analysis below still holds: the image-derived qualContext slugger closes the qualContext leak,
+and the residual (a name not in the map) is backstopped by that per-image review. Mentions of OCR/redaction
+below are historical design context.
 ---
 
 Now I have everything I need. Here is the final approval-ready architecture specification.
@@ -390,7 +397,7 @@ Golden stability: NORTHWIND_SIZING has `hoVcpu=32` produced by `bindKeyValue` on
 | Path | Status |
 |---|---|
 | Vision reads un-redacted name from garbled OCR region → qualContext item text | CLOSED: Slugger replaces any map-entry phrase before storage |
-| Vision reads un-redacted name not in the map | RESIDUAL: D2 acknowledge gate is the backstop. The name would appear in qualContext and potentially in prose output. Rep must review redaction preview. |
+| Vision reads un-redacted name not in the map | RESIDUAL: D2 acknowledge gate is the backstop. The name would appear in qualContext and potentially in prose output. Rep must review the image (per-image acknowledge gate). |
 | classifyText produces qualContext from un-slugged text | IMPOSSIBLE: text primitives are slugged before triage |
 | Vision emits tier code containing company name | IMPOSSIBLE: tier codes (M80, etc.) are not company names |
 | qualContext from TriageResult reaches generateProse un-slugged | IMPOSSIBLE by construction: re-slug occurs at read time in readArtifactImage, before storage |
@@ -431,7 +438,7 @@ const anonOk = !!s.anonBundle && (!anonHasImages || (s.imagesReviewed && allAckn
      <input type="checkbox"
        checked={state.imageAcknowledgedIds.includes(`${r.id}:${r.source}`)}
        onChange={() => toggleAcknowledge(r.id, r.source)} />
-     I have reviewed this redaction
+     I have reviewed this image — it's safe to send
    </label>
    ```
 2. `toggleAcknowledge(id, source)`: computes key `${id}:${source}`, toggles in `state.imageAcknowledgedIds` via `patch`.
@@ -774,10 +781,10 @@ New test file covering all 10 known tiers, unknown tier, case-folding, `M30_LOW_
 
 ### What Still Needs a Manual Browser/Vision Check
 
-- `readArtifactImage` with a real dark/dense Atlas dashboard screenshot (tesseract OCR quality on these images is known-bad; the vision model may also struggle).
+- `readArtifactImage` with a real dark/dense Atlas dashboard screenshot — verify the vision model reads multi-panel CPU + scalars correctly (no CI substitute for real vision).
 - Per-image acknowledge checkbox renders and gates Next button correctly in the browser.
 - Go launcher vs TS Slugger equivalence test (see §7) requires both processes to run; add to integration test suite, not unit test suite.
-- `recognizeWords` (tesseract.js) and canvas/redaction cannot run under jsdom/CI — tested manually via the existing browser test workflow.
+- End-to-end vision extraction (image → bindings/qualContext) can only be confirmed against a live provider; the mocked suite covers the parsing/validation logic but not the model's reading accuracy.
 
 ---
 
