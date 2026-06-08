@@ -57,7 +57,7 @@ Then open the printed URL. For UI development, `pnpm dev` runs the Vite dev serv
 
 ## Status
 
-Functional end-to-end — the full 7-step wizard, with 500 TypeScript tests plus the Go launcher tests. Built with full CI/CD and strict TDD. Design spec: [`docs/specs/2026-06-04-adb-sizing-app-design.md`](docs/specs/2026-06-04-adb-sizing-app-design.md); sizing methodology: [`docs/SIZING-METHODOLOGY.md`](docs/SIZING-METHODOLOGY.md).
+Functional end-to-end — the full 7-step wizard, with 505 TypeScript tests plus the Go launcher tests. Built with full CI/CD and strict TDD. Design spec: [`docs/specs/2026-06-04-adb-sizing-app-design.md`](docs/specs/2026-06-04-adb-sizing-app-design.md); sizing methodology: [`docs/SIZING-METHODOLOGY.md`](docs/SIZING-METHODOLOGY.md).
 
 > **v0.4.0** bundles the comprehensive evidence analysis (every file/modality mined for sizing signals + qualitative deliverable context, including data read out of images), the customer discount + always-current regeneration, and the business-case archives (save/open/version + add-files). The local OCR image-redaction experiment was **removed** — images are sent to the AI's vision model as-is, with the rep responsible for redacting/excluding them — which also clears the CI-unverifiable blocker that had held the release. See [`CHANGELOG.md`](CHANGELOG.md).
 
