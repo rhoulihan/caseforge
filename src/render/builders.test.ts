@@ -10,10 +10,11 @@ import { ENGINE_CONFIG } from '../engine/config';
 
 // Rates from the central config (so this golden tests production rates); the asserted output numbers
 // below stay pinned — if a rate in config changes, those assertions fail and force a deliberate update.
-const rates = { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo, dataCompressedGb: 45_800 };
+const rates = { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo };
+const DATA_GB = 45_800;
 
 describe('buildSizingScenarios', () => {
-  const scenarios = buildSizingScenarios(NORTHWIND_SIZING, rates);
+  const scenarios = buildSizingScenarios(NORTHWIND_SIZING, rates, DATA_GB);
   it('produces conservative (÷2) and aggressive (÷3) scenarios reproducing the engine goldens', () => {
     const c = scenarios.find((s) => s.posture === 'conservative')!;
     const a = scenarios.find((s) => s.posture === 'aggressive')!;
@@ -33,7 +34,7 @@ describe('buildSizingScenarios', () => {
 });
 
 describe('buildTcoSection', () => {
-  const tco = buildTcoSection(NORTHWIND, rates);
+  const tco = buildTcoSection(NORTHWIND, DATA_GB);
   it('reproduces the TCO goldens', () => {
     expect(tco.onprem.total.central).toBe(449500);
     expect(tco.adbWarmAnnual.central).toBe(213649);
@@ -55,7 +56,7 @@ describe('buildTcoSection', () => {
 });
 
 describe('customer discount (via assembleDocModel)', () => {
-  const base = buildTcoSection(NORTHWIND, rates);
+  const base = buildTcoSection(NORTHWIND, DATA_GB);
   const opts = {
     companyName: 'Northwind',
     targetPlatform: 'Oracle Autonomous Database',
@@ -64,6 +65,7 @@ describe('customer discount (via assembleDocModel)', () => {
     sizingInputs: NORTHWIND_SIZING,
     assumptions: [],
     rates,
+    dataCompressedGb: DATA_GB,
     tcoInputs: NORTHWIND,
     sufficiency: NORTHWIND_DOCMODEL.sufficiency,
     prose: NORTHWIND_DOCMODEL.prose,
@@ -107,7 +109,7 @@ describe('customer discount (via assembleDocModel)', () => {
 });
 
 describe('chart builders', () => {
-  const tco = buildTcoSection(NORTHWIND, rates);
+  const tco = buildTcoSection(NORTHWIND, DATA_GB);
   it('builds a 3-bar cost chart whose segments sum to each total and savePct is read from the TCO', () => {
     const cost = buildCostChartData('Northwind', tco);
     expect(cost.bars).toHaveLength(3);
@@ -142,6 +144,7 @@ describe('assembleDocModel', () => {
     sizingInputs: NORTHWIND_SIZING,
     assumptions: ['32 vCPU per home node (to confirm)', 'Primary-only reads'],
     rates,
+    dataCompressedGb: DATA_GB,
     tcoInputs: NORTHWIND,
     sufficiency: NORTHWIND_DOCMODEL.sufficiency,
     prose: NORTHWIND_DOCMODEL.prose,
@@ -168,6 +171,7 @@ describe('assembleDocModel', () => {
       sizingInputs: NORTHWIND_SIZING,
       assumptions: [],
       rates,
+      dataCompressedGb: DATA_GB,
       tcoInputs: NORTHWIND,
       sufficiency: NORTHWIND_DOCMODEL.sufficiency,
       prose: NORTHWIND_DOCMODEL.prose,
@@ -187,6 +191,7 @@ describe('assembleDocModel', () => {
       sizingInputs: NORTHWIND_SIZING,
       assumptions: [],
       rates,
+      dataCompressedGb: DATA_GB,
       tcoInputs: NORTHWIND,
       sufficiency: NORTHWIND_DOCMODEL.sufficiency,
       prose: NORTHWIND_DOCMODEL.prose,

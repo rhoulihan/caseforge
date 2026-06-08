@@ -168,7 +168,7 @@ export async function triage(
 export function toSizingInputs(
   bindings: BindingResult[],
   profile: SourceProfile,
-): { inputs?: SizingInputs; missing: string[] } {
+): { inputs?: SizingInputs; dataCompressedGb?: number; missing: string[] } {
   const by = new Map(bindings.map((b) => [b.signalId, b]));
   const required = profile.signalSchema.signals.filter((s) => s.criticality === 'required');
   const missing = required.filter((s) => by.get(s.id)?.value === undefined).map((s) => s.id);
@@ -182,5 +182,5 @@ export function toSizingInputs(
     drVcpu: num('node.drVcpu'),
     util: { primary: ap('util.primary'), hoSec: ap('util.hoSec'), dr: ap('util.dr') },
   };
-  return { inputs, missing: [] };
+  return { inputs, dataCompressedGb: num('data.storageSizeGb'), missing: [] };
 }

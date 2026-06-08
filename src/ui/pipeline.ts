@@ -72,7 +72,7 @@ export function buildRunConfig(a: BuildConfigArgs): RunConfig {
   if (!state.anonBundle || !state.config || !state.triage) {
     throw new Error('cannot generate: missing anonymized bundle, setup, or classification');
   }
-  const rates: EcpuStorageRates = { ...ADB_RATES, dataCompressedGb: dataGbFromTriage(state.triage) };
+  const rates: EcpuStorageRates = { ...ADB_RATES };
   return {
     bundle: state.anonBundle, // anonymized — the LLM only ever sees slugs
     profile: MONGODB_PROFILE,

@@ -46,12 +46,23 @@ const baseConfig = (): RunConfig => ({
   targetPlatform: 'Oracle Autonomous Database',
   preparedDate: '2026-06-05',
   tcoInputs: NORTHWIND,
-  rates: { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo, dataCompressedGb: 45_800 },
+  rates: { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo },
   assumptions: ['32 vCPU per home node (to confirm)'],
   claims: NORTHWIND_DOCMODEL.claims,
   llm: mockLLM(),
   model: 'claude-opus-4-8',
 });
+
+function configWithStorageGb(storageGb: number): RunConfig {
+  const overriddenTopology: KeyValuePrimitive = {
+    ...topology,
+    pairs: { ...topology.pairs, 'storage size': String(storageGb) },
+  };
+  return {
+    ...baseConfig(),
+    bundle: { primitives: [overriddenTopology, utilTable], files },
+  };
+}
 
 describe('runPipeline', () => {
   it('runs end-to-end (Northwind) → a complete DocModel + rendered deliverables', async () => {
@@ -116,5 +127,16 @@ describe('runPipeline', () => {
     const classify = out.budgetLog.find((c) => c.stage === 'classify');
     expect(classify?.inputTokens).toBe(100);
     expect(classify?.skipped).toBeUndefined(); // counted, not skipped
+  });
+});
+
+describe('storage threading', () => {
+  it('storage size threads from the gate into the ADB storage cost line (no hardcoded default)', async () => {
+    // configWithStorageGb spreads the base config and patches only the 'storage size' pair.
+    const out = await runPipeline(configWithStorageGb(2000));
+    expect(out.docModel).toBeDefined();
+    expect(out.docModel!.sizing.dataCompressedGb).toBe(2000);
+    // round(2000 * 0.1156) = 231 / month
+    expect(out.docModel!.sizing.scenarios[0]!.monthlyStorageCost).toBe(231);
   });
 });

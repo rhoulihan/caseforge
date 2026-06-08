@@ -28,19 +28,18 @@ import type { SufficiencyReport } from '../classify/sufficiency-types';
 export interface EcpuStorageRates {
   ecpuPerHr: number;
   storagePerGbMo: number;
-  dataCompressedGb: number;
   hoursPerMonth?: number;
 }
 
 const DEFAULT_HRS_PER_MO = ENGINE_CONFIG.adb.hoursPerMonth;
 
-function scenario(posture: 'conservative' | 'aggressive', n: number, inputs: SizingInputs, rates: EcpuStorageRates): SizingScenario {
+function scenario(posture: 'conservative' | 'aggressive', n: number, inputs: SizingInputs, rates: EcpuStorageRates, dataCompressedGb: number): SizingScenario {
   const c = consumedEcpu(inputs, 'workload');
   const base = baseFor(c.peak, c.avg, n);
   const { x2, x3 } = ceilings(base);
   const hrs = rates.hoursPerMonth ?? DEFAULT_HRS_PER_MO;
   const monthlyEcpuCost = Math.round(base * rates.ecpuPerHr * hrs);
-  const monthlyStorageCost = Math.round(rates.dataCompressedGb * rates.storagePerGbMo);
+  const monthlyStorageCost = Math.round(dataCompressedGb * rates.storagePerGbMo);
   return {
     level: 'central',
     posture,
@@ -56,10 +55,10 @@ function scenario(posture: 'conservative' | 'aggressive', n: number, inputs: Siz
   };
 }
 
-export function buildSizingScenarios(inputs: SizingInputs, rates: EcpuStorageRates): SizingScenario[] {
+export function buildSizingScenarios(inputs: SizingInputs, rates: EcpuStorageRates, dataCompressedGb: number): SizingScenario[] {
   return [
-    scenario('conservative', ENGINE_CONFIG.sizing.conservativeDivisor, inputs, rates),
-    scenario('aggressive', ENGINE_CONFIG.sizing.aggressiveDivisor, inputs, rates),
+    scenario('conservative', ENGINE_CONFIG.sizing.conservativeDivisor, inputs, rates, dataCompressedGb),
+    scenario('aggressive', ENGINE_CONFIG.sizing.aggressiveDivisor, inputs, rates, dataCompressedGb),
   ];
 }
 
@@ -75,12 +74,12 @@ const ONPREM_LABELS: Record<string, string> = {
   backup: 'Backup / DR tooling',
 };
 
-export function buildTcoSection(tcoInputs: TcoInputs, rates: EcpuStorageRates): TcoSection {
+export function buildTcoSection(tcoInputs: TcoInputs, dataCompressedGb: number): TcoSection {
   const fyWarm = fiveYear(tcoInputs, 'warm', 'central');
   const fyCold = fiveYear(tcoInputs, 'cold', 'central');
   const labels: Record<string, string> = {};
   for (const k of Object.keys(tcoInputs.onpremComponents)) labels[k] = ONPREM_LABELS[k] ?? k;
-  const coldRto = coldRtoHours(rates.dataCompressedGb / 1000);
+  const coldRto = coldRtoHours(dataCompressedGb / 1000);
   return {
     onprem: { components: tcoInputs.onpremComponents, labels, total: range((l) => onpremTotal(tcoInputs, l)) },
     adbWarmAnnual: range((l) => adbTotal(tcoInputs, 'warm', l)),
@@ -181,6 +180,7 @@ export interface AssembleOptions {
   sizingInputs: SizingInputs;
   assumptions: string[];
   rates: EcpuStorageRates;
+  dataCompressedGb: number;
   tcoInputs: TcoInputs;
   sufficiency: SufficiencyReport;
   prose: { businessCase: BusinessCaseProse; sizingBrief: SizingBriefProse; technicalReview: TechnicalReviewProse };
@@ -194,7 +194,7 @@ export interface AssembleOptions {
  * untouched. */
 export function assembleDocModel(o: AssembleOptions): DocModel {
   const discountPct = o.discountPct ?? 0;
-  const tco = buildTcoSection(applyDiscount(o.tcoInputs, discountPct), o.rates);
+  const tco = buildTcoSection(applyDiscount(o.tcoInputs, discountPct), o.dataCompressedGb);
   // The discount applies to the whole PROPOSED Oracle cost, so the sizing-scenario ECPU/storage costs
   // (the indicative ADB cost shown in the Sizing Brief) are discounted by the same factor — keeping every
   // customer-facing Oracle figure consistent. Provisioning (ECPU counts) is unaffected; rates only scale price.
@@ -210,7 +210,7 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     assumptions: o.assumptions,
   };
   const consumed = consumedEcpu(o.sizingInputs, 'workload');
-  const scenarios = buildSizingScenarios(o.sizingInputs, scenarioRates);
+  const scenarios = buildSizingScenarios(o.sizingInputs, scenarioRates, o.dataCompressedGb);
   // Always synthesize the authoritative sizing + TCO claims from the engine numbers, so the claims
   // checklist is never empty (even when the rep skipped cost research). Merge with any caller-supplied
   // (researched) cost claims, deduped by id — synthesized win, which keeps the set stable when a refine
@@ -226,7 +226,7 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     documentStatus: o.documentStatus,
     discountPct,
     listAdbAnnual,
-    sizing: { basis, consumed, scenarios, dataCompressedGb: o.rates.dataCompressedGb },
+    sizing: { basis, consumed, scenarios, dataCompressedGb: o.dataCompressedGb },
     tco,
     charts: { cost: buildCostChartData(o.companyName, tco), fiveYear: buildFiveYearChartData(tco) },
     sufficiency: o.sufficiency,

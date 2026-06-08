@@ -38,6 +38,7 @@ export interface ApplyResult {
   triage: TriageResult;
   sufficiency: SufficiencyReport;
   inputs?: SizingInputs;
+  dataCompressedGb?: number;
   blocked: boolean;
   reasons: string[];
 }
@@ -88,9 +89,9 @@ export function applyGateAnswers(
   const newTriage: TriageResult = { ...triage, bindings: merged };
   // Re-run sufficiency so the verdict tier reflects the merged bindings (incl. assumption-default caps).
   const sufficiency = buildSufficiencyReport(newTriage, files, profile);
-  const { inputs, missing } = toSizingInputs(merged, profile);
+  const { inputs, dataCompressedGb, missing } = toSizingInputs(merged, profile);
   if (missing.length > 0) {
     return { triage: newTriage, sufficiency, blocked: true, reasons: missing.map((id) => `${id} still missing`) };
   }
-  return { triage: newTriage, sufficiency, inputs, blocked: false, reasons: [] };
+  return { triage: newTriage, sufficiency, inputs, dataCompressedGb, blocked: false, reasons: [] };
 }

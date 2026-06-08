@@ -119,7 +119,7 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
 
   // 2. Apply gate answers (builds + re-runs sufficiency + toSizingInputs). Block if a required signal is unmet.
   const applied = applyGateAnswers(tri, config.gateAnswers ?? [], config.bundle.files, config.profile);
-  if (applied.blocked || !applied.inputs) {
+  if (applied.blocked || !applied.inputs || applied.dataCompressedGb === undefined) {
     const gate = buildGateData(applied.sufficiency, config.profile); // post-answer gaps (not the pre-answer set)
     const reasons = applied.reasons.length > 0 ? applied.reasons : gate.items.map((i) => `${i.signalId} ${i.currentStatus}`);
     return { ...base, budgetLog: log(), gate: { items: gate.items, blocked: true, reasons } };
@@ -146,6 +146,7 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
     sizingInputs: applied.inputs,
     assumptions: config.assumptions,
     rates: config.rates,
+    dataCompressedGb: applied.dataCompressedGb!,
     tcoInputs: config.tcoInputs,
     discountPct: config.discountPct,
     sufficiency: applied.sufficiency,

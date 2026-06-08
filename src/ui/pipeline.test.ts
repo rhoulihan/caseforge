@@ -49,7 +49,7 @@ describe('buildRunConfig', () => {
     expect(cfg.companyName).toBe('Northwind Mutual'); // real name (safe — not in the LLM prose context)
     expect(cfg.triage).toBe(triage); // reused, no re-classify
     expect(cfg.budgetLimit).toEqual({ tokens: 250_000 });
-    expect(cfg.rates.dataCompressedGb).toBe(2000);
+    expect('dataCompressedGb' in cfg.rates).toBe(false); // storage threads from the gate, not the rates
     expect(cfg.profile.id).toBe('mongodb');
     expect(typeof cfg.llm!.complete).toBe('function');
   });
