@@ -13,10 +13,9 @@ import type { TcoProfile, DrPostureInput } from '../research/tco';
 import type { WizardState } from './state';
 import { MONGODB_PROFILE } from '../profile/mongodb';
 import { ENGINE_CONFIG } from '../engine/config';
-import { createLLM } from '../provider';
+import { createLLM, defaultModelFor } from '../provider';
 import { applyGateAnswers } from '../orchestrate/gate';
 
-const MODEL = 'claude-opus-4-8';
 // Oracle ADB list rates — sourced from the central engine config (edit there when Oracle revises pricing).
 const ADB_RATES = { ecpuPerHr: ENGINE_CONFIG.adb.ecpuPerHr, storagePerGbMo: ENGINE_CONFIG.adb.storagePerGbMo };
 
@@ -92,7 +91,7 @@ export function buildRunConfig(a: BuildConfigArgs): RunConfig {
     assumptions: [],
     claims: a.claims,
     llm: createLLM(state.config.provider, { apiKey: a.apiKey }),
-    model: MODEL,
+    model: defaultModelFor(state.config.provider),
     budgetLimit: { tokens: state.config.tokenBudget },
     triage: state.triage, // reuse the Step-4 triage — no second classify pass (carries qualContext too)
     classifyUsage: state.classifyUsage, // so the reused-triage path still counts the classify cost

@@ -34,3 +34,16 @@ export function createLLM(provider: ProviderName, cfg: CreateLLMConfig): LLM {
       throw new Error(`unknown provider: ${String(provider)}`);
   }
 }
+
+/** The default model id for a provider. The app sends one model id to whatever provider the rep
+ *  picked, so it MUST match the provider (an OpenAI key rejects a Claude model id, and vice-versa). */
+export function defaultModelFor(provider: ProviderName): string {
+  switch (provider) {
+    case 'claude':
+      return 'claude-opus-4-8';
+    case 'openai':
+      return 'gpt-5.5';
+    default:
+      throw new Error(`unknown provider: ${String(provider)}`);
+  }
+}

@@ -10,11 +10,10 @@ import { MONGODB_PROFILE } from '../../profile/mongodb';
 import { triage } from '../../classify/triage';
 import { buildSufficiencyReport } from '../../classify/sufficiency';
 import { buildGateData, applyGateAnswers, type GateAnswer, type GateData, type GateItem } from '../../orchestrate/gate';
-import { createLLM } from '../../provider';
+import { createLLM, defaultModelFor } from '../../provider';
 import type { SufficiencyReport } from '../../classify/sufficiency-types';
 import type { SignalValue } from '../../classify/types';
 
-const MODEL = 'claude-opus-4-8';
 const TIER_LABEL: Record<string, string> = { blocked: 'BLOCKED', 'directional-estimate': 'DIRECTIONAL ESTIMATE', 'engineering-grade': 'ENGINEERING-GRADE' };
 
 function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer | null) => void }) {
@@ -81,7 +80,7 @@ export function Step4Confirm() {
     setLoading(true);
     setError('');
     const llm = createLLM(cfg.provider, { apiKey: getApiKey() });
-    triage(bundle, MONGODB_PROFILE, llm, MODEL, state.map)
+    triage(bundle, MONGODB_PROFILE, llm, defaultModelFor(cfg.provider), state.map)
       .then(({ result: tri, usage }) => {
         if (!alive) return;
         const suff = buildSufficiencyReport(tri, bundle.files, MONGODB_PROFILE);
