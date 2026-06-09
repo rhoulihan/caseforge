@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
+import { Spinner } from '../Spinner';
 import { MONGODB_PROFILE } from '../../profile/mongodb';
 import { triage } from '../../classify/triage';
 import { buildSufficiencyReport } from '../../classify/sufficiency';
@@ -119,7 +120,7 @@ export function Step4Confirm() {
     patch({ gateAnswers: ans, confirmed: true });
   }
 
-  if (loading) return <section class="cf-card"><h2>4 · Confirm</h2><p class="cf-hint">Classifying the anonymized evidence…</p></section>;
+  if (loading) return <section class="cf-card"><h2>4 · Confirm</h2><p class="cf-hint"><Spinner />Classifying the anonymized evidence…</p></section>;
 
   return (
     <section class="cf-card">

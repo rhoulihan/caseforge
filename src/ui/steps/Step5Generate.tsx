@@ -5,6 +5,7 @@
 import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
+import { Spinner } from '../Spinner';
 import { runPipeline } from '../../orchestrate';
 import { researchTcoCosts, sourcesToClaims } from '../../research/tco';
 import { createLLM, defaultModelFor } from '../../provider';
@@ -131,14 +132,14 @@ export function Step5Generate() {
 
       <div class="cf-anon-actions">
         <button type="button" class="cf-btn ghost" disabled={busy !== 'idle'} onClick={() => void research()}>
-          {busy === 'research' ? 'Researching…' : researched ? 'Re-research costs' : 'Research costs (web search)'}
+          {busy === 'research' ? (<><Spinner />Researching…</>) : researched ? 'Re-research costs' : 'Research costs (web search)'}
         </button>
         <span class="cf-muted">{researched ? '✓ market-researched costs' : 'using default cost estimates (not researched)'}</span>
       </div>
 
       <div class="cf-anon-actions">
         <button type="button" class="cf-btn" disabled={busy !== 'idle'} onClick={() => void generate()}>
-          {busy === 'generate' ? 'Generating…' : out?.docModel ? 'Re-generate' : 'Generate deliverables →'}
+          {busy === 'generate' ? (<><Spinner />Generating…</>) : out?.docModel ? 'Re-generate' : 'Generate deliverables →'}
         </button>
       </div>
 
