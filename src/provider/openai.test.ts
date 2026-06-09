@@ -39,7 +39,7 @@ describe('openai buildRequest', () => {
     expect(input[0]!.content[0]).toEqual({ type: 'input_text', text: 'What is in this chart?' });
     expect(input[0]!.content[1]).toEqual({
       type: 'input_image',
-      image_url: { url: 'data:image/png;base64,AAAA' },
+      image_url: 'data:image/png;base64,AAAA', // Responses API: image_url is the data-URL string, not a { url } object
     });
   });
 

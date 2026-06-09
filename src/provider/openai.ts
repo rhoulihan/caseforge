@@ -20,7 +20,9 @@ function inputParts(m: Message): unknown[] {
   const parts: unknown[] = [];
   if (m.content) parts.push({ type: 'input_text', text: m.content });
   for (const img of m.images ?? []) {
-    parts.push({ type: 'input_image', image_url: { url: `data:${img.mediaType};base64,${img.dataBase64}` } });
+    // Responses API: input_image.image_url is the data-URL STRING itself (NOT a { url } object — that
+    // is the Chat Completions shape, which the Responses API rejects with a 400 invalid_type).
+    parts.push({ type: 'input_image', image_url: `data:${img.mediaType};base64,${img.dataBase64}` });
   }
   return parts;
 }
