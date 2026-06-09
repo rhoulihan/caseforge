@@ -17,6 +17,22 @@ every release below:
   map; the launcher substitutes real text for slugs *before* any AI call. The anonymized content
   is the only thing that ever leaves the machine.
 
+## [0.5.2] — 2026-06-09
+
+### Fixed
+
+- **OpenAI vision calls failed with `400 invalid_type`.** The provider adapter sent the Chat-Completions
+  image shape (`image_url: { url }`) to the OpenAI **Responses** API, which expects `image_url` to be the
+  data-URL **string** itself. Any OpenAI run with images — e.g. an Outlook `.msg` with embedded
+  screenshots — failed at classification (`Invalid type for 'input[0].content[1].image_url'`). The adapter
+  now sends the data URL directly.
+
+### Added
+
+- **Loading spinner during AI calls.** A small spinner now appears whenever the LLM is working —
+  classification (Step 4), cost research and generation (Step 5), and refine (Step 6) — next to the
+  existing status text. It inherits the surrounding text colour and respects `prefers-reduced-motion`.
+
 ## [0.5.1] — 2026-06-09
 
 ### Fixed
