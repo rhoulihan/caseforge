@@ -7,6 +7,7 @@
 import { useState } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
+import { Spinner } from '../Spinner';
 import { runPipeline } from '../../orchestrate';
 import { buildRunConfig, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { persistCase } from '../../archive/persist';
@@ -151,7 +152,7 @@ export function Step6Refine() {
         ) : null}
         <div class="cf-anon-actions">
           <button type="button" class="cf-btn" disabled={busy || needsKey} onClick={() => void regenerate()}>
-            {busy ? 'Regenerating…' : 'Regenerate'}
+            {busy ? (<><Spinner />Regenerating…</>) : 'Regenerate'}
           </button>
           <button type="button" class="cf-btn ghost" disabled={busy} onClick={addMoreFiles}>
             + Add more files

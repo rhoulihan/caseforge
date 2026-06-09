@@ -225,6 +225,29 @@ body {
   cursor: not-allowed;
 }
 
+/* --- Loading spinner (shown during LLM calls) --- */
+.cf-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.5em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.1em;
+  animation: cf-spin 0.65s linear infinite;
+}
+@keyframes cf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cf-spinner {
+    animation: none;
+  }
+}
+
 /* --- Step forms / drop zone / file report --- */
 .cf-sub {
   color: var(--cf-slate-2);
