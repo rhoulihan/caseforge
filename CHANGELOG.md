@@ -17,6 +17,17 @@ every release below:
   map; the launcher substitutes real text for slugs *before* any AI call. The anonymized content
   is the only thing that ever leaves the machine.
 
+## [0.5.1] — 2026-06-09
+
+### Fixed
+
+- **OpenAI provider was sent the Claude model id.** The UI hardcoded `claude-opus-4-8` and sent it to
+  whichever provider the rep selected, so an OpenAI key got `400 model_not_found: The requested model
+  'claude-opus-4-8' does not exist.` at the Research and Generate steps. A new
+  `defaultModelFor(provider)` (`src/provider/`) maps `claude → claude-opus-4-8` and `openai → gpt-5.5`;
+  classification (Step 4), cost research (Step 5), and generation (`buildRunConfig`) now derive the model
+  from the selected provider instead of a hardcoded constant.
+
 ## [0.5.0] — 2026-06-08
 
 > This release closes a class of silent-default bugs on the sizing/cost path and simplifies the image

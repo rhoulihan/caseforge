@@ -7,7 +7,7 @@ import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 import { runPipeline } from '../../orchestrate';
 import { researchTcoCosts, sourcesToClaims } from '../../research/tco';
-import { createLLM } from '../../provider';
+import { createLLM, defaultModelFor } from '../../provider';
 import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { newCaseId } from '../../archive/serialize';
 import { persistCase } from '../../archive/persist';
@@ -17,7 +17,6 @@ import type { TcoInputs } from '../../engine/types';
 import type { ClaimInput } from '../../render/types';
 import type { BudgetCheckpoint } from '../../orchestrate/budget';
 
-const MODEL = 'claude-opus-4-8';
 const usd = (c: number): string => `$${c.toFixed(2)}`;
 const todayIso = (): string => new Date().toISOString().slice(0, 10);
 
@@ -39,7 +38,7 @@ export function Step5Generate() {
     setBusy('research');
     setError('');
     try {
-      const r = await researchTcoCosts(llm(), MODEL, tcoProfileFromState(state));
+      const r = await researchTcoCosts(llm(), defaultModelFor(state.config.provider), tcoProfileFromState(state));
       setTco(r.inputs);
       setClaims(sourcesToClaims(r));
       setResearched(true);

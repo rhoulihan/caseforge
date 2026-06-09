@@ -50,6 +50,18 @@ describe('buildRunConfig', () => {
     expect('dataCompressedGb' in cfg.rates).toBe(false); // storage threads from the gate, not the rates
     expect(cfg.profile.id).toBe('mongodb');
     expect(typeof cfg.llm!.complete).toBe('function');
+    expect(cfg.model).toBe('claude-opus-4-8'); // provider=claude → Claude model id
+  });
+
+  it('sets the OpenAI model id when the provider is openai', () => {
+    const cfg = buildRunConfig({
+      state: stateWith({ config: { provider: 'openai', companyName: 'Northwind Mutual', tokenBudget: 250_000, discountPct: 0 } }),
+      apiKey: 'sk-proj-x',
+      tcoInputs: DEFAULT_TCO_INPUTS,
+      claims: [],
+      preparedDate: '2026-06-06',
+    });
+    expect(cfg.model).toBe('gpt-5.5'); // provider=openai → OpenAI model id
   });
 
   it('throws if the prerequisites are missing', () => {

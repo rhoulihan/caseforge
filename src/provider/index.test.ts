@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createLLM } from './index';
+import { createLLM, defaultModelFor } from './index';
 import type { HttpRequest, HttpResponse, Transport } from './transport';
 import type { CompleteOptions } from './types';
 
@@ -41,5 +41,20 @@ describe('createLLM', () => {
   it('throws on an unknown provider', () => {
     // @ts-expect-error — exercising the runtime guard for a bad provider name
     expect(() => createLLM('gemini', { apiKey: 'x' })).toThrow(/unknown provider/i);
+  });
+});
+
+describe('defaultModelFor', () => {
+  it('returns the Claude model id for the claude provider', () => {
+    expect(defaultModelFor('claude')).toBe('claude-opus-4-8');
+  });
+
+  it('returns the OpenAI model id for the openai provider', () => {
+    expect(defaultModelFor('openai')).toBe('gpt-5.5');
+  });
+
+  it('throws on an unknown provider', () => {
+    // @ts-expect-error — exercising the runtime guard for a bad provider name
+    expect(() => defaultModelFor('gemini')).toThrow(/unknown provider/i);
   });
 });
