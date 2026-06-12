@@ -1,14 +1,18 @@
-# Editable discovered metrics + Step-5 narrative tuning
+# Editable metrics, Step-5 narrative tuning, and compressed/uncompressed storage
 
 _Design spec · 2026-06-12 · status: approved, pre-implementation_
 
-Two related rep-facing improvements to the Step-4 (Confirm) and Step-5 (Generate) wizard steps:
+Three related rep-facing improvements to the Step-4 (Confirm) and Step-5 (Generate) wizard steps:
 
 1. **Adjustable discovered metrics.** Today the rep can only supply *missing* required signals at the
    gate; values CaseForge already discovered are read-only. The rep must be able to **adjust any
    discovered metric** — and adjusting (or filling) any metric makes the estimate **Directional**.
 2. **Narrative tuning on Generate.** The rep can provide a narrative-tuning prompt on Step 5 so the
    *first* generation reflects it — no Generate-then-Refine round trip required.
+3. **Compressed/uncompressed storage.** The rep can mark the storage estimate as compressed or
+   uncompressed (**default uncompressed**); an uncompressed figure is converted to the effective Oracle
+   on-disk footprint via a researched, tunable **3× compression factor** before it feeds the ADB storage
+   cost, the cold-DR RTO, and the cost-research prompt.
 
 ## 1. Background — current behavior
 
@@ -42,6 +46,9 @@ slugged refinements) → `proseInstruction` → `runPipeline` → `generateProse
 | 2 | Step-4 UI | One **unified editable metrics table** (replaces the read-only coverage table + the separate gate inputs). |
 | 3 | Which metrics are adjustable | Required signals + storage in the main table; recommended/`tcoCritical` signals in an expandable **Additional Metrics** section. |
 | 4 | Tier scope | The engineering-grade / Directional / Blocked tier is driven by the **required** signals only. Editing an *Additional* (recommended) metric is used in the cost case but does **not** itself flip the tier. |
+| 5 | Oracle compression factor | **3×** (uncompressed → effective on-disk), a tunable `ENGINE_CONFIG` constant. Midpoint of Advanced Compression's 2–4× and OSON's ~2.7–3×; conservative so we never overstate Oracle's storage efficiency. |
+| 6 | Storage compression modeling | **One storage value + a compressed/uncompressed toggle** (default uncompressed), modeled as a companion enum signal rendered inline on the storage row — not its own metrics row. |
+| 7 | Does the compression assumption demote the tier? | **No.** The 3× factor is a documented engine constant (like the ECPU ratio or the DR formula); only Policy-B rep entry/adjustment of the storage *value* demotes. |
 
 ## 3. Goals / non-goals
 
@@ -123,6 +130,36 @@ today. No tier change from Additional edits (§2 #4).
   later regenerates, exactly like a Step-6 refine). The add-files carried-instruction path folds into the
   same single prepare call.
 
+### 4.7 Compressed/uncompressed storage + Oracle compression factor
+
+The customer's "database size" is usually the **logical/uncompressed** figure, but the ADB storage cost
+must reflect the **compressed on-disk** footprint Oracle would actually store.
+
+- **One storage value + a compression toggle.** The required storage metric (`data.storageSizeGb`,
+  re-cast as "storage size estimate") gains a **compression state** — `compressed | uncompressed`,
+  **default uncompressed** — modeled as a companion enum signal `data.storageCompressionState`
+  (`recommended`, default `uncompressed`). It is **not** its own metrics row; the storage row renders the
+  value input plus an inline compressed/uncompressed toggle that drives this signal.
+- **Discovery default.** When a storage figure is read or rep-entered without a clear compressed/on-disk
+  cue (e.g. `db.stats().storageSize`, "on-disk", "compressed"), the engine treats it as **uncompressed**.
+  An explicit on-disk/compressed cue — or the rep's toggle — marks it compressed. (Heuristic binding may
+  set `data.storageCompressionState = 'compressed'` when it binds from a `storageSize`/on-disk alias.)
+- **Engine.** New pure function `effectiveCompressedGb(rawGb, compressed, ratio)` in `engine/storage.ts`:
+  `compressed ? rawGb : rawGb / ratio`. New constant `ENGINE_CONFIG.adb.compressionRatio = 3` (sourced
+  comment: Oracle Advanced Compression 2–4× / OSON ~2.7–3×; conservative midpoint; tune in one place),
+  pinned by the `config.test.ts` drift guard.
+- **Where it's applied.** The *effective* compressed GB is computed wherever the storage size is consumed
+  for cost/DR/research: `toSizingInputs` (engine path → `dataCompressedGb`) and `tcoProfileFromState`
+  (research path) both read the raw value (`data.storageSizeGb`) + the compression state and apply
+  `effectiveCompressedGb`. Every existing consumer (`scenario` storage cost, `buildTcoSection` cold-RTO,
+  the research prompt) keeps receiving a single effective on-disk number — no consumer changes.
+- **Transparency.** `DocModel.sizing` carries the raw figure, the compression state, the ratio, and the
+  derived effective size, so the rep/deliverable can show e.g. "45.8 TB (uncompressed) → ~15.3 TB
+  effective on Oracle (assumes 3× Advanced Compression)".
+- **Tier.** The 3× factor is a documented modeling constant and does **not** demote the tier (decision
+  #7). Per Policy B, only rep entry/adjustment of the storage **value** demotes; toggling the compression
+  state or relying on the default is modeling metadata, not a value change.
+
 ## 5. File-by-file change list
 
 **Production**
@@ -139,7 +176,23 @@ today. No tier change from Additional edits (§2 #4).
   log to refinement history.
 - `src/ui/NarrativeTuner.tsx` (new, optional) — shared textarea + chips for Step 5 / Step 6.
 - `src/ui/styles.css` — styles for the metrics table, the Additional Metrics `<details>`, the adjusted
-  badge, and (if shared) the tuner.
+  badge, the storage compression toggle, and (if shared) the tuner.
+- `src/engine/config.ts` — add `adb.compressionRatio = 3` (sourced comment).
+- `src/engine/storage.ts` (new) — pure `effectiveCompressedGb(rawGb, compressed, ratio)`.
+- `src/engine/types.ts` — `SizingSection`/`DocModel.sizing` (in `render/types.ts`) carries raw storage GB,
+  compression state, ratio, and effective compressed GB for display.
+- `src/profile/mongodb.ts` — re-label `data.storageSizeGb` as "storage size estimate"; add the companion
+  `data.storageCompressionState` enum signal (`recommended`, default `uncompressed`); add a `storageSize`/
+  on-disk alias mapping that sets the state to `compressed` on discovery.
+- `src/classify/triage.ts` — `toSizingInputs` computes `dataCompressedGb` via `effectiveCompressedGb` from
+  the raw value + compression state; carries raw + state for display.
+- `src/ui/pipeline.ts` — `tcoProfileFromState` applies `effectiveCompressedGb` (research path).
+- `src/render/builders.ts` — thread raw/state/ratio/effective into `DocModel.sizing`; the renderer shows
+  the "uncompressed → effective" line. `EcpuStorageRates`/`dataCompressedGb` consumers unchanged (still
+  receive the effective number).
+- `src/ui/steps/Step4Confirm.tsx` — the storage `MetricRow` renders the value input + an inline
+  compressed/uncompressed toggle (emits a `data.storageCompressionState` gate answer); the companion
+  signal is excluded from the standalone row list.
 
 **Tests**
 - `src/classify/sufficiency.test.ts` — re-baseline: a rep-entered (`rep-gate-answer`) required signal →
@@ -154,13 +207,24 @@ today. No tier change from Additional edits (§2 #4).
 - `src/ui/steps/Step5Generate.test.tsx` — a Step-5 tuning prompt is fail-closed-checked, threaded as
   `proseInstruction`, and logged to history; a prompt naming an unmapped person blocks with the Step-3
   pointer.
-- Goldens (`northwind-classify.golden.test.ts`, render goldens) — unchanged values; the Northwind case has
+- `src/engine/storage.test.ts` (new) — `effectiveCompressedGb`: compressed → raw; uncompressed → raw/3;
+  guards on ≤ 0 / NaN. `src/engine/config.test.ts` — pin `adb.compressionRatio = 3`.
+- Discovery default: a storage figure with no compressed cue binds `storageCompressionState = 'uncompressed'`
+  and the effective GB = raw/3; a `storageSize`/on-disk cue (or rep toggle) → `compressed`, effective = raw.
+- `Step4Confirm.test.tsx` — the storage row shows the toggle; toggling to compressed changes the effective
+  size; the companion signal isn't a standalone row.
+- DocModel/render: `sizing` exposes raw + state + effective; the deliverable shows the "uncompressed →
+  effective" line for an uncompressed estimate.
+- Goldens (`northwind-classify.golden.test.ts`, render goldens) — the Northwind storage figure (45,800 GB)
+  is the **on-disk compressed** number, so the fixture must bind `storageCompressionState = 'compressed'`
+  to keep the effective size at 45,800 (no factor) and the golden numbers unchanged. The Northwind case has
   no rep entries, so it stays engineering-grade.
 
 **Docs**
 - `docs/SIZING-METHODOLOGY.md` §5 — state the tightened bar: engineering-grade ⇔ every required signal
   read from an uploaded artifact, untouched; any rep fill/adjust → Directional. Note the Step-5 tuning
-  prompt under the generation section.
+  prompt under the generation section, and document the storage compression state + the 3× Oracle
+  compression factor (with its source) in §1/§7.
 
 ## 6. Risks & verification
 
@@ -173,6 +237,12 @@ today. No tier change from Additional edits (§2 #4).
   re-wins and the tier returns to engineering-grade — assert.
 - **Fail-closed narrative tuning.** The Step-5 prompt must never reach the LLM with an unmapped name —
   assert the block path.
+- **Compression default changes the goldens unless handled.** The new default is *uncompressed*, but the
+  Northwind 45,800 GB figure is on-disk compressed — the fixtures must bind `compressed` so the effective
+  size (and every downstream golden number) is unchanged. Verify.
+- **Single source for the effective size.** The engine path (`toSizingInputs`) and the research path
+  (`tcoProfileFromState`) must apply `effectiveCompressedGb` consistently, so the cost line and the
+  research prompt agree. Assert both yield the same effective GB for the same raw value + state.
 - Build + full test suite green; `pnpm typecheck` / `pnpm lint` clean.
 
 ## 7. Out of scope
