@@ -6,7 +6,7 @@ import type { SizingInputs } from './types';
 
 describe('ENGINE_CONFIG — documented defaults (drift guard)', () => {
   it('holds the known-good Oracle list rates + sizing/DR constants', () => {
-    expect(ENGINE_CONFIG.adb).toEqual({ ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, hoursPerMonth: 730 });
+    expect(ENGINE_CONFIG.adb).toEqual({ ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, hoursPerMonth: 730, compressionRatio: 3 });
     expect(ENGINE_CONFIG.sizing).toEqual({ conservativeDivisor: 2, aggressiveDivisor: 3, autoscaleMultipliers: [2, 3], ecpuPerVcpu: 1 });
     expect(ENGINE_CONFIG.dr).toEqual({ coldRtoBaseHours: 1, coldRtoHoursPerTb: 0.2 });
   });
