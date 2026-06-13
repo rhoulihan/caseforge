@@ -525,6 +525,13 @@ body {
   border-radius: 6px;
   font: inherit;
 }
+.cf-compression select {
+  padding: 6px 8px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+}
 .cf-adjusted {
   background: #fef3c7;
   color: #92400e;

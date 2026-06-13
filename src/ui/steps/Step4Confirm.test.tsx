@@ -115,6 +115,40 @@ describe('Step4Confirm', () => {
     await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('false'));
   });
 
+  it('the storage row has a compression toggle that emits a storageCompressionState gate answer', async () => {
+    setup(full);
+    await screen.findByText(/ENGINEERING-GRADE|DIRECTIONAL/);
+    const toggle = screen.getByTestId('storage-compression-toggle');
+    fireEvent.change(toggle, { target: { value: 'compressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i)); // gateAnswers is patched on confirm
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    const answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.some((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toBe(true);
+    const comp = answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState');
+    expect(comp).toMatchObject({ value: 'compressed' });
+  });
+
+  it('toggling storage compression to compressed and back round-trips the effective size (answer bound then reverted)', async () => {
+    // The companion is recommended (not required), so it never changes the verdict TIER on its own; what it
+    // changes is the EFFECTIVE on-disk GB the engine computes (uncompressed is divided by the Oracle factor,
+    // compressed is used as-is). Binding then unbinding the companion lands the effective size back at baseline.
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    const toggle = screen.getByTestId('storage-compression-toggle') as HTMLSelectElement;
+    expect(toggle.value).toBe('uncompressed'); // default-when-unbound
+    fireEvent.change(toggle, { target: { value: 'compressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    let answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toMatchObject({ value: 'compressed' });
+    // back to the default -> the override is dropped, so the effective size returns to where it started
+    fireEvent.change(toggle, { target: { value: 'uncompressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toBeUndefined();
+  });
+
   it('returning an edit to the discovered value also reverts (no answer recorded)', async () => {
     setup(full);
     await screen.findByText('ENGINEERING-GRADE');

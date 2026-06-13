@@ -27,7 +27,17 @@ function showValue(v: SignalValue | null): string {
   return String(v);
 }
 
-function MetricRowView({ row, adjusted, onAnswer }: { row: MetricRow; adjusted: boolean; onAnswer: (a: GateAnswer | null) => void }) {
+type CompressionState = 'compressed' | 'uncompressed';
+/** Inline control rendered only on the storage row: marks whether the storage figure is on-disk
+ *  (compressed) or logical (uncompressed). The engine divides an uncompressed figure by the Oracle
+ *  compression factor, so this changes the effective storage size / cost (not the tier — a recommended
+ *  signal) live. */
+interface StorageCompression {
+  state: CompressionState;
+  onChange: (s: CompressionState) => void;
+}
+
+function MetricRowView({ row, adjusted, onAnswer, storageCompression }: { row: MetricRow; adjusted: boolean; onAnswer: (a: GateAnswer | null) => void; storageCompression?: StorageCompression }) {
   const discovered = row.value; // the triage-time baseline; stable while the rep edits
   const [val, setVal] = useState(discovered !== null && typeof discovered !== 'object' ? String(discovered) : '');
   const [avg, setAvg] = useState(discovered !== null && typeof discovered === 'object' ? String(Math.round(discovered.avgPct * 100)) : '');
@@ -80,8 +90,24 @@ function MetricRowView({ row, adjusted, onAnswer }: { row: MetricRow; adjusted: 
         ) : (
           <input type="number" aria-label={`${row.label} value`} data-testid={`metric-input-${row.signalId}`} placeholder="value" value={val} onInput={(e) => onScalar(e.currentTarget.value)} />
         )}
+        {storageCompression ? (
+          <label class="cf-compression">
+            <select
+              aria-label="Storage figure compression state"
+              data-testid="storage-compression-toggle"
+              value={storageCompression.state}
+              onChange={(e) => storageCompression.onChange(e.currentTarget.value as CompressionState)}
+            >
+              <option value="uncompressed">Uncompressed (logical)</option>
+              <option value="compressed">Compressed (on-disk)</option>
+            </select>
+          </label>
+        ) : null}
         {adjusted && row.status !== 'missing' ? <span class="cf-hint">Adjusted — the estimate becomes Directional.</span> : null}
       </div>
+      {storageCompression ? (
+        <div class="cf-hint">Uncompressed (logical) figures are divided by the assumed Oracle compression factor; mark compressed if this is the on-disk size.</div>
+      ) : null}
     </div>
   );
 }
@@ -166,6 +192,19 @@ export function Step4Confirm() {
 
   const verdict = live?.sufficiency.verdict ?? report.verdict;
 
+  // The storage row's inline compression companion. The default-when-unbound is uncompressed (the
+  // engine treats unbound and 'uncompressed' identically). Current state = the rep's answer if set,
+  // else the discovered binding from triage coverage, else the profile default 'uncompressed'.
+  const COMPRESSION_ID = 'data.storageCompressionState';
+  const discoveredCompression = report.coverage.find((c) => c.signalId === COMPRESSION_ID)?.value;
+  const baseCompression: CompressionState = discoveredCompression === 'compressed' ? 'compressed' : 'uncompressed';
+  const answeredCompression = answers[COMPRESSION_ID]?.value;
+  const compressionState: CompressionState =
+    answeredCompression === 'compressed' ? 'compressed' : answeredCompression === 'uncompressed' ? 'uncompressed' : baseCompression;
+  const onCompressionChange = (s: CompressionState): void =>
+    // revert to the discovered/default binding when the rep picks the base state, else bind the override
+    setAnswer(COMPRESSION_ID, s === baseCompression ? null : { signalId: COMPRESSION_ID, value: s });
+
   return (
     <section class="cf-card">
       <h2>4 · Confirm</h2>
@@ -181,7 +220,13 @@ export function Step4Confirm() {
       <p class="cf-label" style="margin-top:14px">Metrics · {form.required.length} required signals</p>
       <p class="cf-hint">Values were read from your files. You can adjust any value — a rep-entered value makes the estimate Directional.</p>
       {form.required.map((r) => (
-        <MetricRowView key={r.signalId} row={r} adjusted={r.signalId in answers} onAnswer={(a) => setAnswer(r.signalId, a)} />
+        <MetricRowView
+          key={r.signalId}
+          row={r}
+          adjusted={r.signalId in answers}
+          onAnswer={(a) => setAnswer(r.signalId, a)}
+          storageCompression={r.signalId === 'data.storageSizeGb' ? { state: compressionState, onChange: onCompressionChange } : undefined}
+        />
       ))}
 
       <details class="cf-additional-metrics">
