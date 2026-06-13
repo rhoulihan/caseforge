@@ -63,6 +63,34 @@ describe('triage (heuristics-only, no LLM)', () => {
     expect(inputs).toBeUndefined();
     expect(missing).toContain('util.primary');
   });
+
+  // Binding helpers for the storage-basis tests below (BindingResult shape).
+  const kv = (signalId: string, value: number): BindingResult => ({ signalId, value, confidence: 1, method: 'keyvalue', evidence: [] });
+  const avgPeak = (signalId: string, avgPct: number, peakPct: number): BindingResult => ({ signalId, value: { avgPct, peakPct }, confidence: 1, method: 'numeric-series', evidence: [] });
+  const enumv = (signalId: string, value: string): BindingResult => ({ signalId, value, confidence: 1, method: 'keyvalue', evidence: [] });
+
+  it('toSizingInputs divides an UNCOMPRESSED storage figure by the 3x factor and returns the basis', () => {
+    const bindings = [
+      kv('cluster.shardCount', 3), kv('node.hoVcpu', 32), kv('node.drVcpu', 16),
+      avgPeak('util.primary', 0.18, 0.45), avgPeak('util.hoSec', 0.12, 0.35), avgPeak('util.dr', 0.08, 0.2),
+      kv('data.storageSizeGb', 45_000),
+      // no data.storageCompressionState bound -> default UNCOMPRESSED
+    ];
+    const out = toSizingInputs(bindings, MONGODB_PROFILE);
+    expect(out.dataCompressedGb).toBe(15_000); // 45000 / 3
+    expect(out.storageBasis).toEqual({ rawGb: 45_000, compressed: false, ratio: 3 });
+  });
+
+  it('toSizingInputs leaves a COMPRESSED storage figure unchanged', () => {
+    const bindings = [
+      kv('cluster.shardCount', 3), kv('node.hoVcpu', 32), kv('node.drVcpu', 16),
+      avgPeak('util.primary', 0.18, 0.45), avgPeak('util.hoSec', 0.12, 0.35), avgPeak('util.dr', 0.08, 0.2),
+      kv('data.storageSizeGb', 2000), enumv('data.storageCompressionState', 'compressed'),
+    ];
+    const out = toSizingInputs(bindings, MONGODB_PROFILE);
+    expect(out.dataCompressedGb).toBe(2000);
+    expect(out.storageBasis).toEqual({ rawGb: 2000, compressed: true, ratio: 3 });
+  });
 });
 
 describe('mergeBindings', () => {

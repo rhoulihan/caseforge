@@ -25,3 +25,12 @@ export interface SizingInputs {
   drVcpu: number;
   util: { primary: RoleUtil; hoSec: RoleUtil; dr: RoleUtil };
 }
+
+/** The storage figure the rep provided + whether it was already compressed (on-disk) + the assumed
+ * Oracle compression ratio. The EFFECTIVE on-disk size used by the cost = effectiveCompressedGb(rawGb,
+ * compressed, ratio) — computed once in toSizingInputs (engine/storage.ts). */
+export interface StorageBasis {
+  rawGb: number;
+  compressed: boolean;
+  ratio: number;
+}

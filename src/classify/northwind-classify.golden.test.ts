@@ -17,6 +17,7 @@ const topology: KeyValuePrimitive = {
     'dr cores': '16',
     'logical data size': '1000',
     'storage size': '45800',
+    compressed: 'compressed', // Northwind's 45800 is the on-disk (compressed) figure -> no compression factor applied
   },
 };
 const img = (source: string): ImagePrimitive => ({ kind: 'image', source, mime: 'image/png', bytes: new Uint8Array([1, 2, 3]) });
@@ -115,6 +116,7 @@ describe('Northwind golden: classify -> size, determinism seam', () => {
                 { kind: 'avgPeak', panelLabel: 'System CPU node-2', signalId: 'util.primary', avgPct: 0.2, peakPct: 0.5, numericValue: null, strValue: null, confidence: 0.85 },
                 { kind: 'avgPeak', panelLabel: 'System CPU node-3', signalId: 'util.primary', avgPct: 0.1, peakPct: 0.3, numericValue: null, strValue: null, confidence: 0.85 },
                 { kind: 'scalar', panelLabel: 'On-disk storage size (GB)', signalId: 'data.storageSizeGb', numericValue: 45800, strValue: null, avgPct: null, peakPct: null, confidence: 0.9 },
+                { kind: 'enum', panelLabel: 'Storage figure compression', signalId: 'data.storageCompressionState', strValue: 'compressed', numericValue: null, avgPct: null, peakPct: null, confidence: 0.9 },
               ],
               qualContext: [{ text: 'CF_ORG_01 needs payback under two years', category: 'concern' }],
             }),

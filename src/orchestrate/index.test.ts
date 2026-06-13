@@ -11,7 +11,7 @@ import type { LLM } from '../provider';
 const topology: KeyValuePrimitive = {
   kind: 'keyvalue',
   source: 'topology.txt',
-  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '45800' },
+  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '45800', compressed: 'compressed' },
 };
 // Engineered so seriesStats mean=avg, max=peak (then /100 -> the Northwind fractions).
 const utilTable: TablePrimitive = {
@@ -56,6 +56,8 @@ const baseConfig = (): RunConfig => ({
 function configWithStorageGb(storageGb: number): RunConfig {
   const overriddenTopology: KeyValuePrimitive = {
     ...topology,
+    // topology already marks the figure compressed (on-disk) so effective == raw — this test pins the
+    // threading, not the compression factor (the factor's own goldens live in triage.test / storage.test).
     pairs: { ...topology.pairs, 'storage size': String(storageGb) },
   };
   return {

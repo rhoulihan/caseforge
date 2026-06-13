@@ -8,7 +8,7 @@ import type { SourceProfile, SignalValueKind, Criticality, DerivationMethod } fr
 import type { SufficiencyReport, SignalCoverageItem } from '../classify/sufficiency-types';
 import type { TriageResult, BindingResult, SignalValue } from '../classify/types';
 import type { FileReport } from '../ingest/types';
-import type { SizingInputs } from '../engine/types';
+import type { SizingInputs, StorageBasis } from '../engine/types';
 import { mergeBindings, toSizingInputs } from '../classify/triage';
 import { buildSufficiencyReport } from '../classify/sufficiency';
 
@@ -38,6 +38,7 @@ export interface ApplyResult {
   sufficiency: SufficiencyReport;
   inputs?: SizingInputs;
   dataCompressedGb?: number;
+  storageBasis?: StorageBasis;
   blocked: boolean;
   reasons: string[];
 }
@@ -90,11 +91,11 @@ export function applyGateAnswers(
   const newTriage: TriageResult = { ...triage, bindings: merged };
   // Re-run sufficiency so the verdict tier reflects the merged bindings (incl. any rep-entered evidence from this call).
   const sufficiency = buildSufficiencyReport(newTriage, files, profile);
-  const { inputs, dataCompressedGb, missing } = toSizingInputs(merged, profile);
+  const { inputs, dataCompressedGb, storageBasis, missing } = toSizingInputs(merged, profile);
   if (missing.length > 0) {
     return { triage: newTriage, sufficiency, blocked: true, reasons: missing.map((id) => `${id} still missing`) };
   }
-  return { triage: newTriage, sufficiency, inputs, dataCompressedGb, blocked: false, reasons: [] };
+  return { triage: newTriage, sufficiency, inputs, dataCompressedGb, storageBasis, blocked: false, reasons: [] };
 }
 
 export interface MetricRow {

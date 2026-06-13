@@ -140,6 +140,9 @@ export const NORTHWIND_DOCMODEL: DocModel = {
     consumed,
     scenarios: [scenario('conservative', 2), scenario('aggressive', 3)],
     dataCompressedGb: DATA_COMPRESSED_GB,
+    storageRawGb: DATA_COMPRESSED_GB,
+    storageCompressed: true,
+    storageCompressionRatio: 3,
   },
   tco: {
     onprem: {

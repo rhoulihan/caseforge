@@ -8,13 +8,15 @@
 
 import type { EvidenceBundle } from '../ingest/types';
 import type { SourceProfile, DerivationMethod } from '../profile/types';
-import type { SizingInputs, RoleUtil } from '../engine/types';
+import type { SizingInputs, RoleUtil, StorageBasis } from '../engine/types';
 import type { LLM, Usage } from '../provider';
 import type { BindingResult, PrimitiveClassification, TriageResult } from './types';
 import { classifyTable, bindNumericSeries, bindTableScalars, bindKeyValueTable, bindKeyValue, isNoise } from './heuristics';
 import { readArtifactImage, classifyText } from './llm';
 import { emptyQualContext, mergeQualContexts, type QualContext } from './qual-context';
 import { tierToVcpu } from './tier-lookup';
+import { effectiveCompressedGb } from '../engine/storage';
+import { ENGINE_CONFIG } from '../engine/config';
 import { expandEntries, orderedForward, type MapEntry } from '../anon/mapping';
 
 // Higher = more trusted. manual = any rep-entered gate value; assumption-default = a defaulted placeholder.
@@ -168,7 +170,7 @@ export async function triage(
 export function toSizingInputs(
   bindings: BindingResult[],
   profile: SourceProfile,
-): { inputs?: SizingInputs; dataCompressedGb?: number; missing: string[] } {
+): { inputs?: SizingInputs; dataCompressedGb?: number; storageBasis?: StorageBasis; missing: string[] } {
   const by = new Map(bindings.map((b) => [b.signalId, b]));
   const required = profile.signalSchema.signals.filter((s) => s.criticality === 'required');
   const missing = required.filter((s) => by.get(s.id)?.value === undefined).map((s) => s.id);
@@ -182,5 +184,12 @@ export function toSizingInputs(
     drVcpu: num('node.drVcpu'),
     util: { primary: ap('util.primary'), hoSec: ap('util.hoSec'), dr: ap('util.dr') },
   };
-  return { inputs, dataCompressedGb: num('data.storageSizeGb'), missing: [] };
+  // Compute the EFFECTIVE on-disk GB here (single source). A raw uncompressed estimate is divided by the
+  // Oracle compression ratio; a figure already marked compressed (on-disk) is used as-is. The research path
+  // (tcoProfileFromState) reads this same dataCompressedGb via applyGateAnswers — it must NOT divide again.
+  const rawStorageGb = num('data.storageSizeGb');
+  const compressed = by.get('data.storageCompressionState')?.value === 'compressed'; // default uncompressed (unbound)
+  const ratio = ENGINE_CONFIG.adb.compressionRatio;
+  const dataCompressedGb = effectiveCompressedGb(rawStorageGb, compressed, ratio);
+  return { inputs, dataCompressedGb, storageBasis: { rawGb: rawStorageGb, compressed, ratio }, missing: [] };
 }
