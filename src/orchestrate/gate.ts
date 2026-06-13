@@ -4,8 +4,8 @@
 // RE-RUN so the verdict tier reflects the updated bindings — and under Policy B any rep-entered
 // gate answer (rep-gate-answer evidence) demotes the verdict to directional.
 
-import type { SourceProfile } from '../profile/types';
-import type { SufficiencyReport } from '../classify/sufficiency-types';
+import type { SourceProfile, SignalValueKind, Criticality, DerivationMethod } from '../profile/types';
+import type { SufficiencyReport, SignalCoverageItem } from '../classify/sufficiency-types';
 import type { TriageResult, BindingResult, SignalValue } from '../classify/types';
 import type { FileReport } from '../ingest/types';
 import type { SizingInputs } from '../engine/types';
@@ -93,4 +93,44 @@ export function applyGateAnswers(
     return { triage: newTriage, sufficiency, blocked: true, reasons: missing.map((id) => `${id} still missing`) };
   }
   return { triage: newTriage, sufficiency, inputs, dataCompressedGb, blocked: false, reasons: [] };
+}
+
+export interface MetricRow {
+  signalId: string;
+  label: string;
+  valueKind: SignalValueKind; // 'scalar' | 'avgPeak' | 'enum'
+  criticality: Criticality;
+  value: SignalValue | null;
+  method: DerivationMethod | null;
+  status: SignalCoverageItem['status'];
+  effectiveConfidence: number;
+  repEntered: boolean;
+  collectRequest: string;
+  collectWhy: string;
+}
+
+export interface MetricsForm { required: MetricRow[]; additional: MetricRow[] }
+
+/** One editable row per signal for the Step-4 metrics table: every REQUIRED signal, plus the
+ *  recommended set as "Additional Metrics" (tcoCritical cost drivers first). The storage compression
+ *  companion renders inline on the storage row, never as its own row. */
+export function buildMetricsForm(sufficiency: SufficiencyReport, profile: SourceProfile): MetricsForm {
+  const specById = new Map(profile.signalSchema.signals.map((s) => [s.id, s]));
+  const row = (c: SignalCoverageItem): MetricRow => {
+    const spec = specById.get(c.signalId)!;
+    return {
+      signalId: c.signalId, label: c.label, valueKind: spec.valueKind, criticality: c.criticality,
+      value: c.value, method: c.method, status: c.status, effectiveConfidence: c.effectiveConfidence,
+      repEntered: c.repEntered, collectRequest: spec.collectRequest, collectWhy: spec.collectWhy,
+    };
+  };
+  const COMPANION = 'data.storageCompressionState'; // rendered inline on the storage row (see Step4Confirm)
+  const required = sufficiency.coverage.filter((c) => c.criticality === 'required').map(row);
+  const additional = sufficiency.coverage
+    .filter((c) => c.criticality === 'recommended' && c.signalId !== COMPANION)
+    .map(row)
+    .sort((a, b) =>
+      Number(!!specById.get(b.signalId)?.tcoCritical) - Number(!!specById.get(a.signalId)?.tcoCritical) ||
+      a.label.localeCompare(b.label));
+  return { required, additional };
 }

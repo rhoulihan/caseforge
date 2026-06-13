@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGateData, applyGateAnswers } from './gate';
+import { buildGateData, applyGateAnswers, buildMetricsForm } from './gate';
 import { MONGODB_PROFILE } from '../profile/mongodb';
 import { buildSufficiencyReport } from '../classify/sufficiency';
 import type { TriageResult, BindingResult } from '../classify/types';
@@ -68,5 +68,23 @@ describe('applyGateAnswers', () => {
     const cov = applied.sufficiency.coverage.find((c) => c.signalId === 'node.hoVcpu')!;
     expect(cov.value).toBe(32);            // rep override won the merge
     expect(cov.repEntered).toBe(true);
+  });
+});
+
+describe('buildMetricsForm', () => {
+  it('buildMetricsForm splits required vs additional (recommended), excludes optional + the compression companion', () => {
+    const suff = buildSufficiencyReport(triageOf([]), files, MONGODB_PROFILE);
+    const form = buildMetricsForm(suff, MONGODB_PROFILE);
+    expect(form.required.map((r) => r.signalId)).toContain('cluster.shardCount');
+    expect(form.required.map((r) => r.signalId)).toContain('data.storageSizeGb');
+    expect(form.additional.length).toBeGreaterThan(0);
+    expect(form.additional.every((r) => r.criticality === 'recommended')).toBe(true);
+    expect(form.additional.map((r) => r.signalId)).not.toContain('data.collectionProfile'); // optional excluded
+    expect([...form.required, ...form.additional].map((r) => r.signalId)).not.toContain('data.storageCompressionState');
+    // tcoCritical recommended signals sort first in additional:
+    const firstTco = form.additional.findIndex((r) => r.signalId === 'data.logicalSizeGb');
+    const anyNonTco = form.additional.findIndex((r) => r.signalId === 'workload.opsPerSec');
+    expect(firstTco).toBeGreaterThanOrEqual(0);
+    expect(anyNonTco).toBeGreaterThan(firstTco);
   });
 });
