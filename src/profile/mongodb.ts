@@ -86,7 +86,7 @@ const required: SignalSpec[] = [
   },
   {
     id: 'data.storageSizeGb',
-    label: 'On-disk (compressed) storage size',
+    label: 'On-disk / logical storage size estimate',
     unit: 'GB',
     valueKind: 'scalar',
     criticality: 'required',
@@ -98,7 +98,7 @@ const required: SignalSpec[] = [
     // RTO, and the cost-research prompt. It is required because it drives the dominant TCO figure; a
     // missing value must block (or be a flagged rep assumption), never a silent default.
     collectRequest: 'On-disk storage size after WiredTiger compression (`db.stats().storageSize`, or disk-usage metric).',
-    collectWhy: 'The ADB storage line + migration volume — the dominant cost driver; sizing cannot be costed without it.',
+    collectWhy: 'The ADB storage line + migration volume — the dominant cost driver. Mark it compressed (on-disk) or uncompressed (logical) via the compression-state companion; an uncompressed figure is divided by the Oracle compression factor.',
   },
 ];
 
@@ -127,6 +127,17 @@ const recommended: SignalSpec[] = [
     aliases: ['logical data size', 'data size', 'datasize', 'db.stats datasize'],
     collectRequest: 'Total logical data size (`db.stats().dataSize` summed, or the Ops Manager/Atlas "Logical Data Size").',
     collectWhy: 'Storage is ~79% of the Northwind bill — the dominant TCO line. The ECPU number survives without it, but the cost case does not.',
+  },
+  {
+    id: 'data.storageCompressionState',
+    label: 'Storage figure: compressed (on-disk) or uncompressed (logical)',
+    valueKind: 'enum',
+    criticality: 'recommended',
+    defaultable: true,
+    derivableBy: ['llm-text', 'keyvalue', 'vision'],
+    aliases: ['compressed', 'uncompressed', 'on-disk', 'on disk', 'logical data', 'before compression', 'after compression'],
+    collectRequest: 'Is the storage figure on-disk (compressed) or logical (uncompressed)? Default: uncompressed.',
+    collectWhy: 'Determines whether the Oracle compression factor is applied to the storage estimate (uncompressed -> divided by the factor).',
   },
   {
     id: 'data.indexSizeGb',
