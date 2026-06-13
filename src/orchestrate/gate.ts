@@ -2,7 +2,8 @@
 // answer becomes a binding: a CONFIRMED measurement is method 'manual' (cap 1.0); an unconfirmed
 // answer to unblock is 'assumption-default' (capped to 0.5 by sufficiency). After merging, the
 // SufficiencyReport is RE-RUN so the verdict tier reflects assumptions — an assumption-default
-// required signal can never be engineering-grade.
+// required signal can never be engineering-grade — and under Policy B any rep-entered gate answer
+// (rep-gate-answer evidence) demotes the verdict to directional.
 
 import type { SourceProfile } from '../profile/types';
 import type { SufficiencyReport } from '../classify/sufficiency-types';

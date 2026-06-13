@@ -70,6 +70,7 @@ const cov = (
   method,
   value: null,
   evidence: [{ source: 'ops-manager-export.csv', primitiveKind: 'table' }],
+  repEntered: false,
   reason: `${method} (confidence ${effectiveConfidence.toFixed(2)})`,
 });
 

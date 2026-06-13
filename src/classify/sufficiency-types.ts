@@ -24,6 +24,7 @@ export interface SignalCoverageItem {
   method: DerivationMethod | null;
   value: SignalValue | null;
   evidence: EvidenceRef[];
+  repEntered: boolean; // value came from a rep gate answer (rep-gate-answer evidence) — demotes the tier
   reason: string;
 }
 
