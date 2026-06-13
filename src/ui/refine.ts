@@ -8,6 +8,12 @@ import { detectCandidates } from '../anon/detect';
 import type { LauncherClient } from '../launcher/client';
 import type { WizardState } from './state';
 
+// Shared narrative-tuning quick-chips — consumed by both Step 5 (Generate) and Step 6 (Refine) so the
+// first generate AND later refines offer the same one-click tuning. Kept here (not in a step component)
+// so the two steps don't depend on each other. Note: avoid Title-Case bigrams (e.g. "DR resilience"),
+// which the fail-closed name detector would flag as an unmapped proper noun and block.
+export const CHIPS = ['More concise', 'Executive tone', 'Emphasize disaster-recovery resilience', 'Add risk framing'];
+
 export type PreparedInstruction = { blocked: string[] } | { effective?: string; slugged: string };
 
 export async function prepareRefineInstruction(raw: string, state: WizardState, launcher: LauncherClient): Promise<PreparedInstruction> {

@@ -12,7 +12,7 @@ import { createLLM, defaultModelFor } from '../../provider';
 import { buildRunConfig, tcoProfileFromState, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { newCaseId } from '../../archive/serialize';
 import { persistCase } from '../../archive/persist';
-import { prepareRefineInstruction } from '../refine';
+import { prepareRefineInstruction, CHIPS } from '../refine';
 import type { ArchiveVersion } from '../state';
 import type { TcoInputs } from '../../engine/types';
 import type { ClaimInput } from '../../render/types';
@@ -29,6 +29,7 @@ export function Step5Generate() {
   const [researched, setResearched] = useState(false);
   const [busy, setBusy] = useState<'idle' | 'research' | 'generate'>('idle');
   const [checkpoints, setCheckpoints] = useState<BudgetCheckpoint[]>([]);
+  const [tune, setTune] = useState('');
   const [error, setError] = useState('');
   const [saveWarning, setSaveWarning] = useState('');
 
@@ -58,22 +59,24 @@ export function Step5Generate() {
     setSaveWarning('');
     setCheckpoints([]);
     try {
-      // On an add-files generate, apply the instruction the rep carried from Step 6 — anonymized + replayed
-      // (fail-closed: if it names someone not in the map, block and point them back to Step 3).
+      // ALWAYS prepare the narrative instruction — anonymized + replayed — so the FIRST generate reflects
+      // any Step-5 tuning AND any note carried from Step 6 on an add-files detour (fail-closed: if it names
+      // someone not in the map, block and point back to Step 3). Empty raw still replays prior refinements
+      // so a re-generate never silently loses accumulated wording.
       const addingFiles = !!state.addFilesMode;
-      let proseInstruction: string | undefined;
-      let pendingSlugged = '';
-      if (addingFiles) {
-        // ALWAYS prepare on add-files (even with no new note) so prior refinements still REPLAY — otherwise
-        // the regenerated deliverables would silently lose the accumulated wording.
-        const prepared = await prepareRefineInstruction(state.pendingRefinement ?? '', state, launcher);
-        if ('blocked' in prepared) {
-          setError(`Your earlier note names ${prepared.blocked.join(', ')} — add them in Step 3 (Anonymize), or go back to Step 6 to edit the note, before generating.`);
-          return;
-        }
-        proseInstruction = prepared.effective; // replays prior refinements + the carried note (if any)
-        pendingSlugged = prepared.slugged;
+      const repNote = tune.trim();
+      // Combine the carried add-files note (if any) with the Step-5 tuning into one raw instruction so both
+      // flow through a single prepare call (fail-closed once, logged once). Strip a trailing sentence-ender
+      // off the carried note before joining so the '. ' separator doesn't produce a doubled '..'.
+      const carried = addingFiles ? (state.pendingRefinement ?? '').trim().replace(/[.!?]+$/, '') : '';
+      const raw = [carried, repNote].filter(Boolean).join('. ');
+      const prepared = await prepareRefineInstruction(raw, state, launcher);
+      if ('blocked' in prepared) {
+        setError(`Your narrative note names ${prepared.blocked.join(', ')} — add them in Step 3 (Anonymize) or rephrase before generating.`);
+        return;
       }
+      const proseInstruction = prepared.effective; // replays prior refinements + this generate's note (if any)
+      const newSlugged = prepared.slugged; // slug form of the just-entered note(s); '' when raw is empty
       const cfg = buildRunConfig({
         state,
         apiKey: getApiKey(),
@@ -99,11 +102,13 @@ export function Step5Generate() {
       const id = String((state.versions?.length ?? 0) + 1).padStart(3, '0');
       const version: ArchiveVersion = { id, createdAt: now, trigger: addingFiles ? 'add-files' : 'initial', discountPct: state.config?.discountPct ?? 0, docModel: out.docModel, rendered: out.rendered };
       const versions = [...(state.versions ?? []), version];
-      // Log the carried instruction (if any) against the version it produced.
-      const refinementHistory = addingFiles && state.pendingRefinement?.trim() ? [...state.refinementHistory, { ts: now, instruction: state.pendingRefinement.trim(), slugged: pendingSlugged, versionId: id }] : state.refinementHistory;
+      // Log the rep-entered note(s) for this generate (carried add-files note + Step-5 tuning, combined into
+      // `raw`) against the version it produced, so it replays on later regenerates. Logged once.
+      const refinementHistory = raw ? [...state.refinementHistory, { ts: now, instruction: raw, slugged: newSlugged, versionId: id }] : state.refinementHistory;
       const cleared = { addFilesMode: false, pendingRefinement: undefined };
       const nextState = { ...state, pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions, refinementHistory, ...cleared };
       patch({ pipeline: out, tcoInputs: tco, caseId, caseCreatedAt: createdAt, versions, refinementHistory, ...cleared });
+      setTune(''); // the note is now logged + replaying — clear the box so a re-generate doesn't double-apply it
       // Save (best-effort — a save failure must NOT lose the deliverables, but must be VISIBLE).
       const err = await persistCase(launcher, nextState);
       if (err) {
@@ -135,6 +140,19 @@ export function Step5Generate() {
           {busy === 'research' ? (<><Spinner />Researching…</>) : researched ? 'Re-research costs' : 'Research costs (web search)'}
         </button>
         <span class="cf-muted">{researched ? '✓ market-researched costs' : 'using default cost estimates (not researched)'}</span>
+      </div>
+
+      <div class="cf-refine">
+        <div class="cf-label">Shape the narrative (optional)</div>
+        <span class="cf-hint">Tone, emphasis, what to lead with. Applied on Generate; no need to regenerate.</span>
+        <div class="cf-chips">
+          {CHIPS.map((c) => (
+            <button key={c} type="button" class="cf-chip" disabled={busy !== 'idle'} onClick={() => setTune(c)}>
+              {c}
+            </button>
+          ))}
+        </div>
+        <textarea aria-label="Narrative tuning" class="cf-ta" value={tune} placeholder="e.g. lead with DR resilience, keep the exec summary tight" onInput={(e) => setTune(e.currentTarget.value)} />
       </div>
 
       <div class="cf-anon-actions">
