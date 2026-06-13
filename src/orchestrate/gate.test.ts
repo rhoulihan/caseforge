@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGateData, applyGateAnswers } from './gate';
+import { buildGateData, applyGateAnswers, buildMetricsForm } from './gate';
 import { MONGODB_PROFILE } from '../profile/mongodb';
 import { buildSufficiencyReport } from '../classify/sufficiency';
 import type { TriageResult, BindingResult } from '../classify/types';
@@ -38,29 +38,19 @@ describe('buildGateData', () => {
 });
 
 describe('applyGateAnswers', () => {
-  it('a confirmed measurement unblocks and can keep an engineering-grade tier', () => {
+  it('a gate answer unblocks the case and binds method manual (rep-entered)', () => {
     const r = applyGateAnswers(
       triageOf(partial),
-      [{ signalId: 'util.primary', value: { avgPct: 0.18, peakPct: 0.45 }, confirmed: true }],
+      [{ signalId: 'util.primary', value: { avgPct: 0.18, peakPct: 0.45 } }],
       files,
       MONGODB_PROFILE,
     );
     expect(r.blocked).toBe(false);
     expect(r.inputs).toBeDefined();
-    expect(r.sufficiency.coverage.find((c) => c.signalId === 'util.primary')?.method).toBe('manual');
-    expect(r.sufficiency.verdict.tier).toBe('engineering-grade');
-  });
-
-  it('an unconfirmed assumption unblocks the number but caps the tier below engineering-grade', () => {
-    const r = applyGateAnswers(
-      triageOf(partial),
-      [{ signalId: 'util.primary', value: { avgPct: 0.18, peakPct: 0.45 }, confirmed: false }],
-      files,
-      MONGODB_PROFILE,
-    );
-    expect(r.blocked).toBe(false);
-    expect(r.inputs).toBeDefined();
-    expect(r.sufficiency.coverage.find((c) => c.signalId === 'util.primary')?.method).toBe('assumption-default');
+    const cov = r.sufficiency.coverage.find((c) => c.signalId === 'util.primary')!;
+    expect(cov.method).toBe('manual');
+    expect(cov.repEntered).toBe(true);
+    // Policy B: any rep-entered gate answer demotes the verdict to directional
     expect(r.sufficiency.verdict.tier).toBe('directional-estimate');
   });
 
@@ -68,5 +58,33 @@ describe('applyGateAnswers', () => {
     const r = applyGateAnswers(triageOf(partial), [], files, MONGODB_PROFILE);
     expect(r.blocked).toBe(true);
     expect(r.reasons.join(' ')).toContain('util.primary');
+  });
+
+  it('a gate answer overrides a discovered binding and marks it rep-entered', () => {
+    const tri: TriageResult = { profileId: 'mongodb', inventory: [], bindings: [
+      { signalId: 'node.hoVcpu', value: 16, confidence: 0.9, method: 'vision', evidence: [{ source: 'chart.png', primitiveKind: 'image' }] },
+    ] };
+    const applied = applyGateAnswers(tri, [{ signalId: 'node.hoVcpu', value: 32 }], [], MONGODB_PROFILE);
+    const cov = applied.sufficiency.coverage.find((c) => c.signalId === 'node.hoVcpu')!;
+    expect(cov.value).toBe(32);            // rep override won the merge
+    expect(cov.repEntered).toBe(true);
+  });
+});
+
+describe('buildMetricsForm', () => {
+  it('splits required vs additional (recommended), excludes optional + the compression companion', () => {
+    const suff = buildSufficiencyReport(triageOf([]), files, MONGODB_PROFILE);
+    const form = buildMetricsForm(suff, MONGODB_PROFILE);
+    expect(form.required.map((r) => r.signalId)).toContain('cluster.shardCount');
+    expect(form.required.map((r) => r.signalId)).toContain('data.storageSizeGb');
+    expect(form.additional.length).toBeGreaterThan(0);
+    expect(form.additional.every((r) => r.criticality === 'recommended')).toBe(true);
+    expect(form.additional.map((r) => r.signalId)).not.toContain('data.collectionProfile'); // optional excluded
+    expect([...form.required, ...form.additional].map((r) => r.signalId)).not.toContain('data.storageCompressionState');
+    // tcoCritical recommended signals sort first in additional:
+    const firstTco = form.additional.findIndex((r) => r.signalId === 'data.logicalSizeGb');
+    const anyNonTco = form.additional.findIndex((r) => r.signalId === 'workload.opsPerSec');
+    expect(firstTco).toBeGreaterThanOrEqual(0);
+    expect(anyNonTco).toBeGreaterThan(firstTco);
   });
 });

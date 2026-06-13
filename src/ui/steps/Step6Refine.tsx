@@ -11,11 +11,10 @@ import { Spinner } from '../Spinner';
 import { runPipeline } from '../../orchestrate';
 import { buildRunConfig, DEFAULT_TCO_INPUTS } from '../pipeline';
 import { persistCase } from '../../archive/persist';
-import { prepareRefineInstruction } from '../refine';
+import { prepareRefineInstruction, CHIPS } from '../refine';
 import type { ArchiveVersion } from '../state';
 
 const TABS = ['Business Case', 'Sizing Brief', 'Technical Review', 'Claims Checklist'];
-const CHIPS = ['More concise', 'Executive tone', 'Emphasize DR resilience', 'Add risk framing'];
 
 export function Step6Refine() {
   const { state, patch, goTo, getApiKey, setApiKey, launcher } = useWizard();

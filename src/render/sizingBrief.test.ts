@@ -28,4 +28,17 @@ describe('renderSizingBrief', () => {
     expect(out.html).toContain('18%');
     expect(out.html).toContain('45%');
   });
+
+  it('shows the compression assumption only when the storage figure was uncompressed', () => {
+    // Northwind's figure is compressed (on-disk) -> no parenthetical.
+    expect(out.html).not.toContain('uncompressed');
+    // An uncompressed basis -> the effective figure is shown with its source figure + the assumed factor.
+    const uncompressed = {
+      ...NORTHWIND_DOCMODEL,
+      sizing: { ...NORTHWIND_DOCMODEL.sizing, dataCompressedGb: 15000, storageRawGb: 45000, storageCompressed: false, storageCompressionRatio: 3 },
+    };
+    const html = renderSizingBrief(uncompressed).html;
+    expect(html).toContain('45.0 TB uncompressed');
+    expect(html).toContain('3&times; Oracle compression assumed');
+  });
 });

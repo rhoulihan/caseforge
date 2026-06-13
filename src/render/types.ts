@@ -35,7 +35,10 @@ export interface SizingSection {
   basis: SizingBasis;
   consumed: Consumed; // {avg, peak, ratio} at workload scope
   scenarios: SizingScenario[];
-  dataCompressedGb: number;
+  dataCompressedGb: number; // the EFFECTIVE on-disk number the cost uses
+  storageRawGb: number; // the storage figure the rep provided
+  storageCompressed: boolean; // was that figure already compressed (on-disk)?
+  storageCompressionRatio: number; // ratio assumed when uncompressed
 }
 
 export interface DrOption {

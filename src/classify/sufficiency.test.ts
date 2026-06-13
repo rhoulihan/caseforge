@@ -74,6 +74,23 @@ describe('buildSufficiencyReport — verdict tiers', () => {
     expect(r.verdict.limitingSignals).toEqual(['util.primary']);
   });
 
+  it('(B) a rep-entered required signal (rep-gate-answer) is never engineering-grade', () => {
+    const reps = allRequiredSatisfied().map((b) =>
+      b.signalId === 'node.hoVcpu' ? mk('node.hoVcpu', 32, 1, 'manual', 'rep-gate-answer') : b,
+    );
+    const r = buildSufficiencyReport(triageOf([...reps, ...storageSatisfied()]), [], MONGODB_PROFILE);
+    expect(r.verdict.tier).toBe('directional-estimate');
+    expect(r.verdict.limitingSignals).toContain('node.hoVcpu');
+  });
+  it('(B2) all required source-read (no rep entry) stays engineering-grade', () => {
+    const r = buildSufficiencyReport(triageOf([...allRequiredSatisfied(), ...storageSatisfied()]), [], MONGODB_PROFILE);
+    expect(r.verdict.tier).toBe('engineering-grade');
+  });
+
+  // NOTE (Policy B): gate answers carry evidence source 'rep-gate-answer' and always demote to
+  // directional-estimate — covered by the (B) test above. This test uses mk() with the default
+  // source 'src', so the manual binding here is a file-read manual annotation, not a rep gate
+  // entry, and correctly stays engineering-grade.
   it('(5) an assumption-default required signal is capped to partial and can never reach engineering-grade; a manual rep-confirmed one can', () => {
     const base = allRequiredSatisfied().filter((x) => x.signalId !== 'util.hoSec');
     const assumed = buildSufficiencyReport(

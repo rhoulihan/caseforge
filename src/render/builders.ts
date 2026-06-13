@@ -2,7 +2,7 @@
 // engine functions (never re-implement the math) and are pinned to the Northwind goldens by builders.test.
 // They are the single source the orchestrator (and the Northwind fixture's goldens) agree on.
 
-import type { SizingInputs, TcoInputs, Level, Range } from '../engine/types';
+import type { SizingInputs, TcoInputs, Level, Range, StorageBasis } from '../engine/types';
 import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../engine/tco';
 import { applyDiscount, discountFactor } from '../engine/discount';
@@ -181,6 +181,7 @@ export interface AssembleOptions {
   assumptions: string[];
   rates: EcpuStorageRates;
   dataCompressedGb: number;
+  storageBasis: StorageBasis;
   tcoInputs: TcoInputs;
   sufficiency: SufficiencyReport;
   prose: { businessCase: BusinessCaseProse; sizingBrief: SizingBriefProse; technicalReview: TechnicalReviewProse };
@@ -226,7 +227,8 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     documentStatus: o.documentStatus,
     discountPct,
     listAdbAnnual,
-    sizing: { basis, consumed, scenarios, dataCompressedGb: o.dataCompressedGb },
+    sizing: { basis, consumed, scenarios, dataCompressedGb: o.dataCompressedGb,
+      storageRawGb: o.storageBasis.rawGb, storageCompressed: o.storageBasis.compressed, storageCompressionRatio: o.storageBasis.ratio },
     tco,
     charts: { cost: buildCostChartData(o.companyName, tco), fiveYear: buildFiveYearChartData(tco) },
     sufficiency: o.sufficiency,

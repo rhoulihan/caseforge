@@ -37,6 +37,13 @@ where `n` is the peak-headroom divisor (`conservativeDivisor` = 2, or `aggressiv
 **Autoscale ceilings** are set at the configured multipliers — **2×** and **3×** the base — the band ADB
 auto-scaling is allowed to use. (`baseFor`, `ceilings`.)
 
+**Storage (compressed vs uncompressed).** The storage estimate carries a compression state — *compressed*
+(an on-disk figure) or *uncompressed* (a logical figure, **the default**). An uncompressed figure is
+converted to the effective on-disk size by dividing by the Oracle compression factor
+(`ENGINE_CONFIG.adb.compressionRatio` = **3**) before it drives the ADB storage cost, the cold-DR RTO, and
+the cost-research prompt; a figure already marked compressed is used as-is. 3× is the conservative midpoint
+of Oracle Advanced Row Compression (2–4×) and OSON (~2.7–3× versus MongoDB BSON). See §7.
+
 ## 2. TCO (cost)
 
 **On-prem annual cost** is the sum of its components at the chosen estimate level (`low` / `central` /
@@ -79,18 +86,22 @@ From these:
 ## 5. Confidence & sufficiency
 
 CaseForge never silently guesses. Each required signal is classified by how it was obtained, and the data
-intake is graded:
+intake is graded under **Policy B** — the grade reflects whether the rep touched a required signal at all:
 
 - **Blocked** — a required signal is missing; the report lists exactly what to ask the customer for.
-  On-disk compressed storage (`data.storageSizeGb`) is one such required signal — the cost case is
-  blocked until it is provided.
-- **Directional estimate** — enough to size, but some required inputs rest on assumptions or fuzzy
-  (heuristic) evidence that sits below the engineering bar. A signal that defaults to an assumption can
-  never be graded engineering-grade — including a storage size typed at the gate rather than read from
-  an artifact, which is recorded as a flagged assumption and holds the case at directional.
-- **Engineering-grade** — every required signal is read with confidence at or above the bar, whether from
-  native structured data **or a confident read of a chart/screenshot**. A clear vision read of a value is
-  treated as engineering-grade — it is as good as reading the number off the source itself.
+  On-disk storage (`data.storageSizeGb`) is one such required signal — the cost case is blocked until it
+  is provided.
+- **Engineering-grade** — *every* required signal was read from an uploaded artifact at or above the
+  confidence bar, **untouched by the rep**, whether from native structured data **or a confident read of a
+  chart/screenshot**. A clear vision read of a value is treated as engineering-grade — it is as good as
+  reading the number off the source itself.
+- **Directional estimate** — **any** rep fill or adjustment of a required signal drops the estimate here,
+  by design — an honest "you changed what we read." The rep can adjust any discovered metric in the
+  unified Step-4 metrics table (not just fill in the missing ones); editing a *required* signal always
+  makes the estimate directional, never engineering-grade.
+
+Recommended / cost-only metrics are editable too (the "Additional Metrics" section of the Step-4 table) —
+editing one feeds the cost case but does **not** change the tier, which turns only on the required signals.
 
 Researched cost figures are capped at *medium* confidence, so a market-researched price can never be
 presented as authoritative without the rep confirming it.
@@ -100,7 +111,11 @@ presented as authoritative without the rep confirming it.
 - **Customer workload telemetry** — topology (shards, vCPU per node, DR cores), utilization
   (average / peak / P95), and on-disk compressed data size (`data.storageSizeGb`), parsed locally from the
   artifacts the customer provides. Logical data size (`data.logicalSizeGb`), when present, serves as a
-  corroborating signal. Only the rep-approved, anonymized content ever reaches the AI.
+  corroborating signal. Only the rep-approved, anonymized content ever reaches the AI. The rep can shape
+  the prose with a narrative-tuning prompt at **Generate** (Step 5) as well as at **Refine** (Step 6); both
+  run the same fail-closed anonymization — any name not in the approved map is blocked before any AI call —
+  and the determinism boundary is unaffected: the AI still only writes prose, while the engine computes
+  every number.
 - **Oracle ADB list pricing** — ECPU and storage rates used for the ADB cost lines. These are researched
   at run time (and confirmed by the rep) or supplied as the `ENGINE_CONFIG.adb` defaults.
 - **On-prem TCO inputs** — license / hardware / storage / facility / labor / backup. The values shipped in
@@ -125,6 +140,7 @@ can vary a single knob without forking the math.
 | `adb.ecpuPerHr` | ADB compute cost line | **$0.0807 / ECPU-hr** | Oracle ADB list pricing |
 | `adb.storagePerGbMo` | ADB storage cost line | **$0.1156 / GB-mo** | Oracle ADB list pricing |
 | `adb.hoursPerMonth` | annualize the ECPU rate | **730** | 365×24/12 (standard billing month) |
+| `adb.compressionRatio` | uncompressed→effective on-disk storage (÷ratio) | **3** (conservative) | Oracle Advanced Compression 2–4× / OSON ~2.7–3× |
 | `sizing.conservativeDivisor` | `base = ceil(max(Peak/n, Avg))` | **2** (Peak÷2) | CaseForge provisioning model (§1) |
 | `sizing.aggressiveDivisor` | aggressive base | **3** (Peak÷3) | CaseForge provisioning model (§1) |
 | `sizing.autoscaleMultipliers` | autoscale band on the base | **[2, 3]** (2× / 3×) | CaseForge provisioning model (§1) |

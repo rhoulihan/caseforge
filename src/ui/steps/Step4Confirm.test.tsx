@@ -50,34 +50,114 @@ function setup(anonBundle: EvidenceBundle) {
 }
 
 describe('Step4Confirm', () => {
-  it('classifies the anonymized evidence, shows an engineering-grade verdict, and confirms', async () => {
+  it('classifies the anonymized evidence, prefills every required metric row, and confirms', async () => {
     setup(full);
     await screen.findByText('ENGINEERING-GRADE');
-    expect(screen.getByText(/all required signals are covered/i)).toBeTruthy();
+    // every required signal renders as an editable row prefilled with the discovered value
+    const shardInput = screen.getByTestId('metric-input-cluster.shardCount') as HTMLInputElement;
+    expect(shardInput.value).toBe('3');
+    const storageInput = screen.getByTestId('metric-input-data.storageSizeGb') as HTMLInputElement;
+    expect(storageInput.value).toBe('45800');
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
     expect(screen.getByText(/click Next to generate/i)).toBeTruthy();
   });
 
-  it('shows a BLOCKED verdict + gate items when a required signal is missing, and refuses to confirm', async () => {
+  it('shows a BLOCKED verdict + empty inputs on missing required rows, and refuses to confirm', async () => {
     setup(topologyOnly);
     await screen.findByText('BLOCKED');
-    // a gate item for the missing utilization signal is rendered (entering the value is the confirmation)
-    expect(screen.getAllByText(/Enter the measured value to confirm/i).length).toBeGreaterThan(0);
+    // the missing utilization signals render as required rows with empty avg/peak inputs + collect guidance
+    const avgInputs = screen.getAllByPlaceholderText('avg %') as HTMLInputElement[];
+    expect(avgInputs.length).toBeGreaterThan(0);
+    expect(avgInputs.every((i) => i.value === '')).toBe(true);
+    expect(screen.getByText(/Average AND peak System-CPU % on the primaries/i)).toBeTruthy();
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await screen.findByText(/still blocked/i);
     expect(screen.getByTestId('confirmed').textContent).toBe('false');
   });
 
-  it('records a typed storage figure as a flagged assumption (confirmed:false), then proceeds', async () => {
+  it('records a typed storage figure as a rep-entered gate answer (no confirmed field), then proceeds', async () => {
     setup(utilNoStorage);
     await screen.findByText('BLOCKED'); // storage missing -> blocked until entered
-    const storageInput = await screen.findByTestId('gate-input-data.storageSizeGb');
+    const storageInput = (await screen.findByTestId('metric-input-data.storageSizeGb')) as HTMLInputElement;
+    expect(storageInput.value).toBe(''); // missing signal -> no prefill
     fireEvent.input(storageInput, { target: { value: '45800' } });
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
     const answers = JSON.parse(screen.getByTestId('answers').textContent!);
     const storage = answers.find((a: { signalId: string }) => a.signalId === 'data.storageSizeGb');
-    expect(storage).toMatchObject({ value: 45800, confirmed: false }); // a typed storage figure is an assumption
+    expect(storage).toMatchObject({ value: 45800 }); // rep-entered gate answer (Policy B demotes tier)
+    expect(storage).not.toHaveProperty('confirmed'); // confirmed flag dropped in uniform model
+  });
+
+  it('adjusting a discovered metric drops the verdict to Directional, and revert restores it', async () => {
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    const input = screen.getByTestId('metric-input-cluster.shardCount');
+    fireEvent.input(input, { target: { value: '5' } });
+    await screen.findByText('DIRECTIONAL ESTIMATE');
+    fireEvent.input(input, { target: { value: '' } }); // revert
+    await screen.findByText('ENGINEERING-GRADE');
+  });
+
+  it('shows a collapsible Additional Metrics section', async () => {
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    expect(screen.getByText(/Additional Metrics/i)).toBeTruthy();
+  });
+
+  it('un-confirms when a metric is edited after confirming, so the edit is not dropped from the run', async () => {
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    fireEvent.input(screen.getByTestId('metric-input-cluster.shardCount'), { target: { value: '5' } });
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('false'));
+  });
+
+  it('the storage row has a compression toggle that emits a storageCompressionState gate answer', async () => {
+    setup(full);
+    await screen.findByText(/ENGINEERING-GRADE|DIRECTIONAL/);
+    const toggle = screen.getByTestId('storage-compression-toggle');
+    fireEvent.change(toggle, { target: { value: 'compressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i)); // gateAnswers is patched on confirm
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    const answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.some((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toBe(true);
+    const comp = answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState');
+    expect(comp).toMatchObject({ value: 'compressed' });
+  });
+
+  it('toggling storage compression to compressed and back round-trips the effective size (answer bound then reverted)', async () => {
+    // The companion is recommended (not required), so it never changes the verdict TIER on its own; what it
+    // changes is the EFFECTIVE on-disk GB the engine computes (uncompressed is divided by the Oracle factor,
+    // compressed is used as-is). Binding then unbinding the companion lands the effective size back at baseline.
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    const toggle = screen.getByTestId('storage-compression-toggle') as HTMLSelectElement;
+    expect(toggle.value).toBe('uncompressed'); // default-when-unbound
+    fireEvent.change(toggle, { target: { value: 'compressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    let answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toMatchObject({ value: 'compressed' });
+    // back to the default -> the override is dropped, so the effective size returns to where it started
+    fireEvent.change(toggle, { target: { value: 'uncompressed' } });
+    fireEvent.click(screen.getByText(/Confirm & continue/i));
+    await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
+    answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.find((a: { signalId: string }) => a.signalId === 'data.storageCompressionState')).toBeUndefined();
+  });
+
+  it('returning an edit to the discovered value also reverts (no answer recorded)', async () => {
+    setup(full);
+    await screen.findByText('ENGINEERING-GRADE');
+    const input = screen.getByTestId('metric-input-cluster.shardCount');
+    fireEvent.input(input, { target: { value: '5' } });
+    await screen.findByText('DIRECTIONAL ESTIMATE');
+    fireEvent.input(input, { target: { value: '3' } }); // back to discovered (3 in the full bundle)
+    await screen.findByText('ENGINEERING-GRADE');
+    const answers = JSON.parse(screen.getByTestId('answers').textContent!);
+    expect(answers.find((a: { signalId: string }) => a.signalId === 'cluster.shardCount')).toBeUndefined();
   });
 });

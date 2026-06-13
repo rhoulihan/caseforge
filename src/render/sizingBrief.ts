@@ -12,11 +12,18 @@ export function renderSizingBrief(m: DocModel): RenderedDoc {
   const b = m.sizing.basis;
   const c = m.sizing.consumed;
 
+  const s = m.sizing;
+  const effectiveTb = `${(s.dataCompressedGb / 1000).toFixed(1)} TB`;
+  // When the rep's figure was uncompressed (logical), show the source figure + the assumed Oracle factor so
+  // the effective on-disk number is transparent. A figure already compressed (on-disk) is shown as-is.
+  const onDiskValue = s.storageCompressed
+    ? effectiveTb
+    : `~${effectiveTb} (from ${(s.storageRawGb / 1000).toFixed(1)} TB uncompressed, ${s.storageCompressionRatio}&times; Oracle compression assumed)`;
   const envRows = [
     ['Shards (data-bearing replica sets)', String(b.shards)],
     ['vCPU per home-region node', String(b.hoVcpu)],
     ['vCPU per DR-region node', String(b.drVcpu)],
-    ['On-disk (compressed) data', `${(m.sizing.dataCompressedGb / 1000).toFixed(1)} TB`],
+    ['On-disk (compressed) data', onDiskValue],
   ];
   const workloadRows = [
     ['Primary', pct(b.util.primary.avgPct), pct(b.util.primary.peakPct)],
