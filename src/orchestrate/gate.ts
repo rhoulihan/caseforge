@@ -42,7 +42,9 @@ export interface ApplyResult {
   reasons: string[];
 }
 
-/** Gate items = required signals that are missing, or partial below the engineering floor. */
+/** Gate items = required signals that are missing, or partial below the engineering floor.
+ *  The Step-4 UI renders buildMetricsForm instead; this remains the headless pipeline's
+ *  post-answer gap report (PipelineOutput.gate — see runPipeline). */
 export function buildGateData(sufficiency: SufficiencyReport, profile: SourceProfile): GateData {
   const items: GateItem[] = [];
   for (const cov of sufficiency.coverage) {
@@ -109,7 +111,10 @@ export interface MetricRow {
   collectWhy: string;
 }
 
-export interface MetricsForm { required: MetricRow[]; additional: MetricRow[] }
+export interface MetricsForm {
+  required: MetricRow[];
+  additional: MetricRow[];
+}
 
 /** One editable row per signal for the Step-4 metrics table: every REQUIRED signal, plus the
  *  recommended set as "Additional Metrics" (tcoCritical cost drivers first). The storage compression
@@ -119,9 +124,17 @@ export function buildMetricsForm(sufficiency: SufficiencyReport, profile: Source
   const row = (c: SignalCoverageItem): MetricRow => {
     const spec = specById.get(c.signalId)!;
     return {
-      signalId: c.signalId, label: c.label, valueKind: spec.valueKind, criticality: c.criticality,
-      value: c.value, method: c.method, status: c.status, effectiveConfidence: c.effectiveConfidence,
-      repEntered: c.repEntered, collectRequest: spec.collectRequest, collectWhy: spec.collectWhy,
+      signalId: c.signalId,
+      label: c.label,
+      valueKind: spec.valueKind,
+      criticality: c.criticality,
+      value: c.value,
+      method: c.method,
+      status: c.status,
+      effectiveConfidence: c.effectiveConfidence,
+      repEntered: c.repEntered,
+      collectRequest: spec.collectRequest,
+      collectWhy: spec.collectWhy,
     };
   };
   const COMPANION = 'data.storageCompressionState'; // rendered inline on the storage row (see Step4Confirm)

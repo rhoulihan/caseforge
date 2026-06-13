@@ -1,59 +1,86 @@
-// Step 4 · Confirm — the Data Intake & Sufficiency Report + the confirm-assumptions gate on one
-// screen. Runs triage on the ANONYMIZED bundle (the first AI call, on slugged text), shows the
-// verdict + per-signal coverage + what's missing, and lets the rep confirm real values or accept
-// assumptions. The triage is cached in state and reused by runPipeline (Step 5) — no double-classify.
+// Step 4 · Confirm — the Data Intake & Sufficiency Report + the unified editable metrics table on
+// one screen. Runs triage on the ANONYMIZED bundle (the first AI call, on slugged text), then shows
+// one editable row per required signal (prefilled with the discovered value) plus an expandable
+// Additional Metrics section of recommended signals. Any edit becomes a gate answer (Policy B: a
+// rep-entered value demotes the verdict to directional — recomputed LIVE as the rep types) and
+// reverting an edit restores the discovered binding. The triage is cached in state and reused by
+// runPipeline (Step 5) — no double-classify.
 
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { useWizard } from '../WizardContext';
 import { useErrors } from '../ErrorContext';
 import { Spinner } from '../Spinner';
 import { MONGODB_PROFILE } from '../../profile/mongodb';
 import { triage } from '../../classify/triage';
 import { buildSufficiencyReport } from '../../classify/sufficiency';
-import { buildGateData, applyGateAnswers, type GateAnswer, type GateData, type GateItem } from '../../orchestrate/gate';
+import { buildMetricsForm, applyGateAnswers, type GateAnswer, type MetricRow } from '../../orchestrate/gate';
 import { createLLM, defaultModelFor } from '../../provider';
 import type { SufficiencyReport } from '../../classify/sufficiency-types';
 import type { SignalValue } from '../../classify/types';
 
 const TIER_LABEL: Record<string, string> = { blocked: 'BLOCKED', 'directional-estimate': 'DIRECTIONAL ESTIMATE', 'engineering-grade': 'ENGINEERING-GRADE' };
 
-function GateRow({ item, onAnswer }: { item: GateItem; onAnswer: (a: GateAnswer | null) => void }) {
-  const isUtil = item.signalId.startsWith('util');
-  const [val, setVal] = useState('');
-  const [avg, setAvg] = useState('');
-  const [peak, setPeak] = useState('');
+/** The discovered-value display: scalar/enum as text, avgPeak as 'avg/peak%', missing as a dash. */
+function showValue(v: SignalValue | null): string {
+  if (v === null) return '—';
+  if (typeof v === 'object') return `${Math.round(v.avgPct * 100)}/${Math.round(v.peakPct * 100)}%`;
+  return String(v);
+}
+
+function MetricRowView({ row, adjusted, onAnswer }: { row: MetricRow; adjusted: boolean; onAnswer: (a: GateAnswer | null) => void }) {
+  const discovered = row.value; // the triage-time baseline; stable while the rep edits
+  const [val, setVal] = useState(discovered !== null && typeof discovered !== 'object' ? String(discovered) : '');
+  const [avg, setAvg] = useState(discovered !== null && typeof discovered === 'object' ? String(Math.round(discovered.avgPct * 100)) : '');
+  const [peak, setPeak] = useState(discovered !== null && typeof discovered === 'object' ? String(Math.round(discovered.peakPct * 100)) : '');
 
   const emit = (v: SignalValue | null): void =>
-    onAnswer(v === null ? null : { signalId: item.signalId, value: v });
-  const onNum = (raw: string): void => {
+    onAnswer(v === null ? null : { signalId: row.signalId, value: v });
+  const onScalar = (raw: string): void => {
     setVal(raw);
     const n = Number(raw);
-    emit(raw.trim() === '' || Number.isNaN(n) ? null : n);
+    if (raw.trim() === '' || !Number.isFinite(n) || n <= 0) return emit(null); // empty/invalid -> the discovered binding stands; every required/recommended scalar in this profile is physically positive (counts, vCPUs, GB)
+    emit(typeof discovered === 'number' && n === discovered ? null : n); // retyping the discovered value is a revert too
+  };
+  const onEnum = (raw: string): void => {
+    setVal(raw);
+    const t = raw.trim();
+    if (t === '') return emit(null);
+    emit(typeof discovered === 'string' && t === discovered ? null : t);
   };
   const onUtil = (a: string, p: string): void => {
     setAvg(a);
     setPeak(p);
     const an = Number(a);
     const pn = Number(p);
-    emit(a.trim() === '' || p.trim() === '' || Number.isNaN(an) || Number.isNaN(pn) ? null : { avgPct: an / 100, peakPct: pn / 100 });
+    if (a.trim() === '' || p.trim() === '' || !Number.isFinite(an) || !Number.isFinite(pn) || an < 0 || pn < 0 || an > 100 || pn > 100 || an > pn) return emit(null);
+    // compare against the prefill rendering (Math.round) so retyping the shown avg/peak reverts cleanly
+    const same = discovered !== null && typeof discovered === 'object' && Math.round(discovered.avgPct * 100) === an && Math.round(discovered.peakPct * 100) === pn;
+    emit(same ? null : { avgPct: an / 100, peakPct: pn / 100 });
   };
 
   return (
-    <div class="cf-gate">
-      <div class="cf-gate-head">
-        <b>{item.label}</b> <span class="cf-badge">{item.currentStatus}</span> <span class="cf-muted">conf {item.effectiveConfidence.toFixed(2)}</span>
+    <div class="cf-metricrow">
+      <div class="cf-metric-head">
+        <b>{row.label}</b>
+        <span class={`cf-badge ${row.status === 'satisfied' ? 'host' : row.status === 'missing' ? 'org' : ''}`}>
+          {row.status === 'missing' ? 'missing' : `${row.method ?? row.status} · ${row.effectiveConfidence.toFixed(2)}`}
+        </span>
+        {adjusted ? <span class="cf-adjusted">adjusted</span> : null}
+        <code class="cf-slug">{showValue(discovered)}</code>
       </div>
-      <div class="cf-muted">{item.collectRequest}</div>
-      <div class="cf-gate-input">
-        {isUtil ? (
+      {row.status === 'missing' ? <div class="cf-muted">{row.collectRequest}</div> : null}
+      <div class="cf-metric-inputs">
+        {row.valueKind === 'avgPeak' ? (
           <>
-            <input type="number" aria-label={`${item.label} avg %`} placeholder="avg %" value={avg} onInput={(e) => onUtil(e.currentTarget.value, peak)} />
-            <input type="number" aria-label={`${item.label} peak %`} placeholder="peak %" value={peak} onInput={(e) => onUtil(avg, e.currentTarget.value)} />
+            <input type="number" aria-label={`${row.label} avg %`} data-testid={`metric-input-${row.signalId}-avg`} placeholder="avg %" value={avg} onInput={(e) => onUtil(e.currentTarget.value, peak)} />
+            <input type="number" aria-label={`${row.label} peak %`} data-testid={`metric-input-${row.signalId}-peak`} placeholder="peak %" value={peak} onInput={(e) => onUtil(avg, e.currentTarget.value)} />
           </>
+        ) : row.valueKind === 'enum' ? (
+          <input type="text" aria-label={`${row.label} value`} data-testid={`metric-input-${row.signalId}`} placeholder="value" value={val} onInput={(e) => onEnum(e.currentTarget.value)} />
         ) : (
-          <input type="number" aria-label={`${item.label} value`} data-testid={`gate-input-${item.signalId}`} placeholder="value" value={val} onInput={(e) => onNum(e.currentTarget.value)} />
+          <input type="number" aria-label={`${row.label} value`} data-testid={`metric-input-${row.signalId}`} placeholder="value" value={val} onInput={(e) => onScalar(e.currentTarget.value)} />
         )}
-        <span class="cf-hint">Enter a value to override or confirm — any rep-entered value makes the estimate Directional.</span>
+        {adjusted && row.status !== 'missing' ? <span class="cf-hint">Adjusted — the estimate becomes Directional.</span> : null}
       </div>
     </div>
   );
@@ -63,7 +90,6 @@ export function Step4Confirm() {
   const { state, patch, getApiKey } = useWizard();
   const { capture } = useErrors();
   const [report, setReport] = useState<SufficiencyReport | null>(null);
-  const [gate, setGate] = useState<GateData | null>(null);
   const [answers, setAnswers] = useState<Record<string, GateAnswer>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -80,9 +106,7 @@ export function Step4Confirm() {
     triage(bundle, MONGODB_PROFILE, llm, defaultModelFor(cfg.provider), state.map)
       .then(({ result: tri, usage }) => {
         if (!alive) return;
-        const suff = buildSufficiencyReport(tri, bundle.files, MONGODB_PROFILE);
-        setReport(suff);
-        setGate(buildGateData(suff, MONGODB_PROFILE));
+        setReport(buildSufficiencyReport(tri, bundle.files, MONGODB_PROFILE));
         patch({ triage: tri, classifyUsage: usage });
       })
       .catch((e) => {
@@ -96,13 +120,26 @@ export function Step4Confirm() {
     };
   }, [state.anonBundle, state.config, getApiKey, patch, capture]);
 
-  const setAnswer = (id: string, a: GateAnswer | null): void =>
+  // Rows come from the ORIGINAL triage-time report so the discovered baseline + prefill stay
+  // stable while the rep edits; only the verdict recomputes live (below).
+  const form = useMemo(() => (report ? buildMetricsForm(report, MONGODB_PROFILE) : null), [report]);
+
+  // LIVE verdict: re-apply the current answers on every edit — any rep-entered value demotes the
+  // tier to directional (Policy B); deleting/reverting the edit restores the triage-time verdict.
+  const live = useMemo(
+    () => (state.triage && state.anonBundle ? applyGateAnswers(state.triage, Object.values(answers), state.anonBundle.files, MONGODB_PROFILE) : null),
+    [state.triage, state.anonBundle, answers],
+  );
+
+  const setAnswer = (id: string, a: GateAnswer | null): void => {
+    if (state.confirmed) patch({ confirmed: false }); // a post-confirm edit invalidates the snapshot — force re-confirm
     setAnswers((prev) => {
       const next = { ...prev };
       if (a) next[id] = a;
       else delete next[id];
       return next;
     });
+  };
 
   function confirm(): void {
     if (!state.triage || !state.anonBundle) return;
@@ -118,57 +155,54 @@ export function Step4Confirm() {
 
   if (loading) return <section class="cf-card"><h2>4 · Confirm</h2><p class="cf-hint"><Spinner />Classifying the anonymized evidence…</p></section>;
 
+  if (!report || !form) {
+    return (
+      <section class="cf-card">
+        <h2>4 · Confirm</h2>
+        {error ? <p class="cf-error">Classification failed: {error}</p> : null}
+      </section>
+    );
+  }
+
+  const verdict = live?.sufficiency.verdict ?? report.verdict;
+
   return (
     <section class="cf-card">
       <h2>4 · Confirm</h2>
       {error ? <p class="cf-error">Classification failed: {error}</p> : null}
-      {report ? (
-        <>
-          <div class={`cf-verdict ${report.verdict.tier}`}>
-            <span class="cf-vbadge">{TIER_LABEL[report.verdict.tier] ?? report.verdict.tier}</span>
-            <span>{report.verdict.headline}</span>
-          </div>
 
-          {state.triage?.roleWarning ? <p class="cf-hint">⚠ {state.triage.roleWarning}</p> : null}
+      <div class={`cf-verdict ${verdict.tier}`}>
+        <span class="cf-vbadge">{TIER_LABEL[verdict.tier] ?? verdict.tier}</span>
+        <span>{verdict.headline}</span>
+      </div>
 
-          <p class="cf-label" style="margin-top:14px">Evidence coverage · {report.verdict.requiredTotal} required signals</p>
-          <table class="cf-maptable">
-            <tbody>
-              {report.coverage.filter((c) => c.criticality === 'required').map((c) => (
-                <tr key={c.signalId}>
-                  <td>{c.label}</td>
-                  <td><code class="cf-slug">{c.value === null ? '—' : typeof c.value === 'object' ? `${Math.round(c.value.avgPct * 100)}/${Math.round(c.value.peakPct * 100)}%` : String(c.value)}</code></td>
-                  <td><span class={`cf-badge ${c.status === 'satisfied' ? 'host' : c.status === 'missing' ? 'org' : ''}`}>{c.method ?? c.status} · {c.effectiveConfidence.toFixed(2)}</span></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {state.triage?.roleWarning ? <p class="cf-hint">⚠ {state.triage.roleWarning}</p> : null}
 
-          {gate && gate.items.length > 0 ? (
-            <>
-              <p class="cf-label" style="margin-top:14px">Confirm to continue / upgrade</p>
-              {gate.items.map((it) => (
-                <GateRow key={it.signalId} item={it} onAnswer={(a) => setAnswer(it.signalId, a)} />
-              ))}
-            </>
-          ) : (
-            <p class="cf-ok">All required signals are covered.</p>
-          )}
+      <p class="cf-label" style="margin-top:14px">Metrics · {form.required.length} required signals</p>
+      <p class="cf-hint">Values were read from your files. You can adjust any value — a rep-entered value makes the estimate Directional.</p>
+      {form.required.map((r) => (
+        <MetricRowView key={r.signalId} row={r} adjusted={r.signalId in answers} onAnswer={(a) => setAnswer(r.signalId, a)} />
+      ))}
 
-          {blocked.length > 0 ? (
-            <div class="cf-error">
-              Still blocked — provide a real value for: {blocked.join(', ')}
-            </div>
-          ) : null}
+      <details class="cf-additional-metrics">
+        <summary>Additional Metrics ({form.additional.length})</summary>
+        {form.additional.map((r) => (
+          <MetricRowView key={r.signalId} row={r} adjusted={r.signalId in answers} onAnswer={(a) => setAnswer(r.signalId, a)} />
+        ))}
+      </details>
 
-          <div class="cf-anon-actions">
-            <button type="button" class="cf-btn" onClick={confirm}>
-              Confirm &amp; continue →
-            </button>
-            {state.confirmed ? <span class="cf-ok">✓ confirmed — click Next to generate</span> : null}
-          </div>
-        </>
+      {blocked.length > 0 ? (
+        <div class="cf-error">
+          Still blocked — provide a real value for: {blocked.join(', ')}
+        </div>
       ) : null}
+
+      <div class="cf-anon-actions">
+        <button type="button" class="cf-btn" onClick={confirm}>
+          Confirm &amp; continue →
+        </button>
+        {state.confirmed ? <span class="cf-ok">✓ confirmed — click Next to generate</span> : null}
+      </div>
     </section>
   );
 }

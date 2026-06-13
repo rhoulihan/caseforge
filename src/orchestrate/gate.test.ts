@@ -72,7 +72,7 @@ describe('applyGateAnswers', () => {
 });
 
 describe('buildMetricsForm', () => {
-  it('buildMetricsForm splits required vs additional (recommended), excludes optional + the compression companion', () => {
+  it('splits required vs additional (recommended), excludes optional + the compression companion', () => {
     const suff = buildSufficiencyReport(triageOf([]), files, MONGODB_PROFILE);
     const form = buildMetricsForm(suff, MONGODB_PROFILE);
     expect(form.required.map((r) => r.signalId)).toContain('cluster.shardCount');
