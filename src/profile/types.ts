@@ -13,7 +13,7 @@ export type DerivationMethod =
   | 'llm-text' // LLM classified ambiguous prose/table
   | 'heuristic' // inferred / fuzzy-aliased structural bind
   | 'assumption-default' // a defaulted value standing in for missing evidence (NOT a measurement)
-  | 'manual'; // a rep-confirmed measurement entered at the §8.5 gate
+  | 'manual'; // a rep-entered value entered at the §8.5 gate (a fill or an override)
 
 export type SignalValueKind = 'scalar' | 'avgPeak' | 'enum';
 

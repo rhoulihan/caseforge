@@ -1,9 +1,8 @@
 // The assumptions gate (spec §8.5) — data-model + apply-answers (no UI; that is Plan 10). A rep
-// answer becomes a binding: a CONFIRMED measurement is method 'manual' (cap 1.0); an unconfirmed
-// answer to unblock is 'assumption-default' (capped to 0.5 by sufficiency). After merging, the
-// SufficiencyReport is RE-RUN so the verdict tier reflects assumptions — an assumption-default
-// required signal can never be engineering-grade — and under Policy B any rep-entered gate answer
-// (rep-gate-answer evidence) demotes the verdict to directional.
+// answer becomes a binding: every gate answer is a rep-entered override bound as method 'manual'
+// (confidence 1.0) with evidence source 'rep-gate-answer'. After merging, the SufficiencyReport is
+// RE-RUN so the verdict tier reflects the updated bindings — and under Policy B any rep-entered
+// gate answer (rep-gate-answer evidence) demotes the verdict to directional.
 
 import type { SourceProfile } from '../profile/types';
 import type { SufficiencyReport } from '../classify/sufficiency-types';
@@ -31,8 +30,7 @@ export interface GateData {
 
 export interface GateAnswer {
   signalId: string;
-  value: SignalValue;
-  confirmed: boolean; // true = rep attests a real measurement; false = an assumption to unblock
+  value: SignalValue; // a rep-entered value (a fill or an override); always demotes the tier (Policy B)
 }
 
 export interface ApplyResult {
@@ -75,9 +73,9 @@ export function applyGateAnswers(
     signalId: a.signalId,
     value: a.value,
     confidence: 1,
-    method: a.confirmed ? 'manual' : 'assumption-default',
+    method: 'manual', // trust 7 -> wins mergeBindings over any artifact-read value
     evidence: [{ source: 'rep-gate-answer', primitiveKind: 'keyvalue' }],
-    note: a.confirmed ? 'rep-confirmed measurement' : 'assumption to unblock',
+    note: 'rep-entered at the gate',
   }));
 
   const bySignal = new Map<string, BindingResult[]>();
@@ -88,7 +86,7 @@ export function applyGateAnswers(
   }
   const merged = [...bySignal.values()].map(mergeBindings);
   const newTriage: TriageResult = { ...triage, bindings: merged };
-  // Re-run sufficiency so the verdict tier reflects the merged bindings (incl. assumption-default caps).
+  // Re-run sufficiency so the verdict tier reflects the merged bindings (incl. any rep-entered evidence from this call).
   const sufficiency = buildSufficiencyReport(newTriage, files, profile);
   const { inputs, dataCompressedGb, missing } = toSizingInputs(merged, profile);
   if (missing.length > 0) {

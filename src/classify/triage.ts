@@ -17,7 +17,7 @@ import { emptyQualContext, mergeQualContexts, type QualContext } from './qual-co
 import { tierToVcpu } from './tier-lookup';
 import { expandEntries, orderedForward, type MapEntry } from '../anon/mapping';
 
-// Higher = more trusted. manual = rep-confirmed measurement; assumption-default = a guess.
+// Higher = more trusted. manual = any rep-entered gate value; assumption-default = a defaulted placeholder.
 const TRUST: Record<DerivationMethod, number> = {
   manual: 7,
   'numeric-series': 6,

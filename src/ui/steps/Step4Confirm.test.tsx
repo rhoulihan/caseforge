@@ -63,13 +63,13 @@ describe('Step4Confirm', () => {
     setup(topologyOnly);
     await screen.findByText('BLOCKED');
     // a gate item for the missing utilization signal is rendered (entering the value is the confirmation)
-    expect(screen.getAllByText(/Enter the measured value to confirm/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Enter a value to override or confirm/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText(/Confirm & continue/i));
     await screen.findByText(/still blocked/i);
     expect(screen.getByTestId('confirmed').textContent).toBe('false');
   });
 
-  it('records a typed storage figure as a flagged assumption (confirmed:false), then proceeds', async () => {
+  it('records a typed storage figure as a rep-entered gate answer (no confirmed field), then proceeds', async () => {
     setup(utilNoStorage);
     await screen.findByText('BLOCKED'); // storage missing -> blocked until entered
     const storageInput = await screen.findByTestId('gate-input-data.storageSizeGb');
@@ -78,6 +78,7 @@ describe('Step4Confirm', () => {
     await waitFor(() => expect(screen.getByTestId('confirmed').textContent).toBe('true'));
     const answers = JSON.parse(screen.getByTestId('answers').textContent!);
     const storage = answers.find((a: { signalId: string }) => a.signalId === 'data.storageSizeGb');
-    expect(storage).toMatchObject({ value: 45800, confirmed: false }); // a typed storage figure is an assumption
+    expect(storage).toMatchObject({ value: 45800 }); // rep-entered gate answer (Policy B demotes tier)
+    expect(storage).not.toHaveProperty('confirmed'); // confirmed flag dropped in uniform model
   });
 });
