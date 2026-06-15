@@ -7,6 +7,9 @@ import { buildCostChart } from '../charts/costChart';
 import { buildFiveYearChart } from '../charts/fiveYearChart';
 import { withinFrame, noCollisions } from '../charts/svg';
 import { ENGINE_CONFIG } from '../engine/config';
+import { applyGateAnswers, type GateAnswer } from '../orchestrate/gate';
+import { MONGODB_PROFILE } from '../profile/mongodb';
+import type { TriageResult } from '../classify/types';
 
 // Rates from the central config (so this golden tests production rates); the asserted output numbers
 // below stay pinned — if a rate in config changes, those assertions fail and force a deliberate update.
@@ -56,7 +59,6 @@ describe('buildTcoSection', () => {
 });
 
 describe('customer discount (via assembleDocModel)', () => {
-  const base = buildTcoSection(NORTHWIND, DATA_GB);
   const opts = {
     companyName: 'Northwind',
     targetPlatform: 'Oracle Autonomous Database',
@@ -72,12 +74,15 @@ describe('customer discount (via assembleDocModel)', () => {
     prose: NORTHWIND_DOCMODEL.prose,
     claims: NORTHWIND_DOCMODEL.claims,
   };
+  // Baseline = the engine-derived (0% discount) Oracle cost, so the discount assertions compare the
+  // discounted figure against the same derived list price (not the inert tcoInputs placeholders).
+  const base = assembleDocModel(opts).tco;
 
   it('default (no discount) is a strict golden no-op', () => {
     const dm = assembleDocModel(opts);
     expect(dm.discountPct).toBe(0);
-    expect(dm.tco.adbWarmAnnual.central).toBe(213649);
-    expect(dm.tco.savingWarm).toEqual({ amount: 235851, pct: 52 });
+    expect(dm.tco.adbWarmAnnual.central).toBe(221706);
+    expect(dm.tco.savingWarm).toEqual({ amount: 227794, pct: 51 });
   });
 
   it('discounts the proposed ADB cost (25%) but never the on-prem baseline', () => {
@@ -105,7 +110,7 @@ describe('customer discount (via assembleDocModel)', () => {
   it('carries the list-vs-net display figure only when discounted', () => {
     expect(assembleDocModel(opts).listAdbAnnual).toBeUndefined(); // 0% → no list figure
     const dm = assembleDocModel({ ...opts, discountPct: 25 });
-    expect(dm.listAdbAnnual!.warm).toBe(213649); // pre-discount list, from undiscounted inputs
+    expect(dm.listAdbAnnual!.warm).toBe(221706); // pre-discount list, from the derived Oracle cost
   });
 });
 
@@ -154,10 +159,10 @@ describe('assembleDocModel', () => {
   });
   it('assembles a complete DocModel whose numbers match the render goldens (drift guard)', () => {
     expect(docModel.sizing.scenarios.map((s) => s.base)).toEqual([22, 18]);
-    expect(docModel.tco.adbWarmAnnual.central).toBe(213649);
-    expect(docModel.tco.savingWarm.pct).toBe(52);
-    expect(docModel.tco.fiveYear.net5Warm).toBe(712478);
-    expect(docModel.charts.fiveYear.paybackYear).toBe(2);
+    expect(docModel.tco.adbWarmAnnual.central).toBe(221706);
+    expect(docModel.tco.savingWarm.pct).toBe(51);
+    expect(docModel.tco.fiveYear.net5Warm).toBe(682090);
+    expect(docModel.charts.fiveYear.paybackYear).toBe(3);
     expect(docModel.charts.cost.bars).toHaveLength(3);
     expect(docModel.sizing.consumed.ratio).toBe(2.5);
     expect(docModel.prose.businessCase.execSummary.length).toBeGreaterThan(0);
@@ -204,5 +209,42 @@ describe('assembleDocModel', () => {
     // Feed the prior claims back in (what a Refine regenerate does) — the count must not grow.
     const second = assembleDocModel({ ...opts2, claims: first.claims });
     expect(second.claims.length).toBe(first.claims.length);
+  });
+
+  it('an overridden sizing signal moves the business-case cost (engine-derived Oracle cost)', () => {
+    const baseTriage: TriageResult = { profileId: 'mongodb', inventory: [], bindings: [
+      { signalId: 'cluster.shardCount', value: 3, confidence: 1, method: 'keyvalue', evidence: [] },
+      { signalId: 'node.hoVcpu', value: 32, confidence: 1, method: 'keyvalue', evidence: [] },
+      { signalId: 'node.drVcpu', value: 16, confidence: 1, method: 'keyvalue', evidence: [] },
+      { signalId: 'util.primary', value: { avgPct: 0.18, peakPct: 0.45 }, confidence: 1, method: 'numeric-series', evidence: [] },
+      { signalId: 'util.hoSec', value: { avgPct: 0.12, peakPct: 0.35 }, confidence: 1, method: 'numeric-series', evidence: [] },
+      { signalId: 'util.dr', value: { avgPct: 0.08, peakPct: 0.2 }, confidence: 1, method: 'numeric-series', evidence: [] },
+      { signalId: 'data.storageSizeGb', value: 45_800, confidence: 1, method: 'keyvalue', evidence: [] },
+      { signalId: 'data.storageCompressionState', value: 'compressed', confidence: 1, method: 'keyvalue', evidence: [] },
+    ] };
+    const assemble = (answers: GateAnswer[]) => {
+      const a = applyGateAnswers(baseTriage, answers, [], MONGODB_PROFILE);
+      return assembleDocModel({
+        companyName: 'Northwind',
+        targetPlatform: 'Oracle Autonomous Database',
+        preparedDate: '2026-06-05',
+        documentStatus: 'preliminary',
+        assumptions: [],
+        rates,
+        tcoInputs: NORTHWIND,
+        prose: NORTHWIND_DOCMODEL.prose,
+        claims: [],
+        sizingInputs: a.inputs!,
+        dataCompressedGb: a.dataCompressedGb!,
+        storageBasis: a.storageBasis!,
+        sufficiency: a.sufficiency,
+      });
+    };
+    const base = assemble([]);
+    const doubled = assemble([{ signalId: 'node.hoVcpu', value: 64 }]);
+    expect(doubled.tco.adbWarmAnnual.central).toBeGreaterThan(base.tco.adbWarmAnnual.central);
+    expect(doubled.tco.fiveYear.net5Warm).not.toBe(base.tco.fiveYear.net5Warm);
+    const moreStorage = assemble([{ signalId: 'data.storageSizeGb', value: 91_600 }]);
+    expect(moreStorage.tco.adbColdAnnual.central).toBeGreaterThan(base.tco.adbColdAnnual.central);
   });
 });

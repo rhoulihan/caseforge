@@ -28,9 +28,9 @@ describe('renderBusinessCase', () => {
 
   it('shows the headline numbers read verbatim from the DocModel', () => {
     expect(out.html).toContain('$450K'); // on-prem total
-    expect(out.html).toContain('$214K'); // ADB warm
-    expect(out.html).toContain('52%'); // saving pct (read, not recomputed)
-    expect(out.html).toContain('~Yr 2'); // payback
+    expect(out.html).toContain('$222K'); // ADB warm
+    expect(out.html).toContain('51%'); // saving pct (read, not recomputed)
+    expect(out.html).toContain('~Yr 3'); // payback
   });
 
   it('escapes prose (no XSS)', () => {

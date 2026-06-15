@@ -73,7 +73,7 @@ describe('runPipeline', () => {
     expect(out.gate.blocked).toBe(false);
     expect(out.docModel).toBeDefined();
     expect(out.docModel!.sizing.scenarios[0]!.base).toBe(22);
-    expect(out.docModel!.tco.adbWarmAnnual.central).toBe(213649);
+    expect(out.docModel!.tco.adbWarmAnnual.central).toBe(221706);
     expect(out.docModel!.prose.businessCase.execSummary.length).toBeGreaterThan(0);
     expect(out.rendered).toHaveLength(4);
     for (const r of out.rendered) {
