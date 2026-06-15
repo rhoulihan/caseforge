@@ -53,14 +53,53 @@ of Oracle Advanced Row Compression (2–4×) and OSON (~2.7–3× versus MongoDB
 onprem = sum( onpremComponents[level] )      // license + hardware + storage + facility + labor + backup + …
 ```
 
-**ADB annual cost** is the primary subscription plus the added cost of the chosen DR posture:
+**ADB annual cost is engine-derived from the sizing** — not a researched lump sum. The same
+`consumedEcpu(inputs, 'workload')` peak/avg that drives the Sizing Brief feeds the cost, so adjusting
+vCPU, shards, or storage moves the business case directly. The proposed Oracle side is computed from the
+sizing **×** Oracle list rates; research now supplies **only** the on-premises build-up and the one-time
+migration services (the determinism boundary — the engine computes every proposed-cost number).
+
+For a provisioning divisor `n`, with `base = baseFor(peak, avg, n)`:
 
 ```
-adb = adbPrimary + { cold: coldDrAdd, warm: warmDrAdd, none: 0 }
+computeAnnual(n) = base × ecpuPerHr × hoursPerMonth × 12       // provisioned ECPU compute
+dbStorageAnnual  = onDiskGb × storagePerGbMo × 12              // ADB database storage
+backupStoreAnnual = onDiskGb × backupStoragePerGbMo × 12       // OCI object-storage backups
+```
+
+**`adbPrimary`** is the provisioned compute plus database storage. **The DR add** depends on the posture:
+
+```
+adbPrimary       = computeAnnual(n) + dbStorageAnnual
+warmDrAdd        = computeAnnual(n) + warmStandbyStorageMult × dbStorageAnnual   // ADG cross-region standby
+coldDrAdd        = coldBackupStorageMult × backupStoreAnnual                     // cross-region backup copies
+```
+
+- **Warm DR** stands up a cross-region Autonomous Data Guard peer, billed the **base CPUs** (auto-scaled
+  CPUs of the primary are not billed on the peer) plus **`warmStandbyStorageMult` (2×)** the primary's
+  database storage. (Oracle [ADG cross-region billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/adg-about-cross-region--cross-tenancy.html).)
+- **Cold DR** keeps cross-region backup copies in **object storage** — `coldBackupStorageMult` (2×) the
+  on-disk data at the cheaper OCI Object Storage rate — with **no running standby compute**, which is why
+  cold DR is far cheaper than warm. It is storage-only and therefore posture-invariant
+  (low = central = high). (Oracle [ADB Serverless billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-features-billing.html).)
+
+`adbPrimary`, `warmDrAdd`, and `coldDrAdd` are each computed at three provisioning postures that form the
+`low / central / high` range — all real, defensible strategies:
+
+| level | divisor `n` | provisioned base | meaning |
+|---|---|---|---|
+| low | `aggressiveDivisor` (3) | Peak÷3 | run lean, lean on autoscale |
+| central | `conservativeDivisor` (2) | Peak÷2 | recommended provisioning — the headline number |
+| high | 1 | Peak÷1 | provision for peak, no autoscale reliance |
+
+The composition is unchanged — the chosen-posture primary plus the chosen DR add:
+
+```
+adbTotal = adbPrimary + { cold: coldDrAdd, warm: warmDrAdd, none: 0 }
 ```
 
 **Annual saving** = `onprem(central) − adb(central)`, also expressed as a percentage of on-prem.
-(`onpremTotal`, `adbTotal`, `annualSaving`, `src/engine/tco.ts`.)
+(`deriveOracleCost`, `src/engine/adbCost.ts`; `onpremTotal`, `adbTotal`, `annualSaving`, `src/engine/tco.ts`.)
 
 ## 3. Five-year business case
 
@@ -116,8 +155,10 @@ presented as authoritative without the rep confirming it.
   run the same fail-closed anonymization — any name not in the approved map is blocked before any AI call —
   and the determinism boundary is unaffected: the AI still only writes prose, while the engine computes
   every number.
-- **Oracle ADB list pricing** — ECPU and storage rates used for the ADB cost lines. These are researched
-  at run time (and confirmed by the rep) or supplied as the `ENGINE_CONFIG.adb` defaults.
+- **Oracle ADB list pricing** — ECPU, database-storage, and object-storage backup *rates* the engine
+  multiplies by the sizing to derive the ADB cost lines (§2). These rates are researched at run time (and
+  confirmed by the rep) or supplied as the `ENGINE_CONFIG.adb` defaults; the proposed ADB *cost* itself is
+  computed from the sizing, never researched as a lump sum.
 - **On-prem TCO inputs** — license / hardware / storage / facility / labor / backup. The values shipped in
   the golden fixtures are **illustrative figures for a fictional reference customer**, used only to pin the
   deterministic tests — not a real customer.
@@ -141,6 +182,9 @@ can vary a single knob without forking the math.
 | `adb.storagePerGbMo` | ADB storage cost line | **$0.1156 / GB-mo** | Oracle ADB list pricing |
 | `adb.hoursPerMonth` | annualize the ECPU rate | **730** | 365×24/12 (standard billing month) |
 | `adb.compressionRatio` | uncompressed→effective on-disk storage (÷ratio) | **3** (conservative) | Oracle Advanced Compression 2–4× / OSON ~2.7–3× |
+| `adb.backupStoragePerGbMo` | cold-DR backup storage cost line | **$0.0255 / GB-mo** | OCI Object Storage (Standard) list pricing (cold-DR backups) |
+| `adb.warmStandbyStorageMult` | warm-DR (ADG) storage multiple | **2** | ADG cross-region peer: base CPUs + 2× DB storage |
+| `adb.coldBackupStorageMult` | cold-DR backup-copy multiple | **2** | ADB cross-region backup: 2× replicated backup storage |
 | `sizing.conservativeDivisor` | `base = ceil(max(Peak/n, Avg))` | **2** (Peak÷2) | CaseForge provisioning model (§1) |
 | `sizing.aggressiveDivisor` | aggressive base | **3** (Peak÷3) | CaseForge provisioning model (§1) |
 | `sizing.autoscaleMultipliers` | autoscale band on the base | **[2, 3]** (2× / 3×) | CaseForge provisioning model (§1) |
