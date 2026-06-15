@@ -37,11 +37,13 @@ interface StorageCompression {
   onChange: (s: CompressionState) => void;
 }
 
-function MetricRowView({ row, adjusted, onAnswer, storageCompression }: { row: MetricRow; adjusted: boolean; onAnswer: (a: GateAnswer | null) => void; storageCompression?: StorageCompression }) {
-  const discovered = row.value; // the triage-time baseline; stable while the rep edits
-  const [val, setVal] = useState(discovered !== null && typeof discovered !== 'object' ? String(discovered) : '');
-  const [avg, setAvg] = useState(discovered !== null && typeof discovered === 'object' ? String(Math.round(discovered.avgPct * 100)) : '');
-  const [peak, setPeak] = useState(discovered !== null && typeof discovered === 'object' ? String(Math.round(discovered.peakPct * 100)) : '');
+function MetricRowView({ row, adjusted, onAnswer, storageCompression, initialAnswer }: { row: MetricRow; adjusted: boolean; onAnswer: (a: GateAnswer | null) => void; storageCompression?: StorageCompression; initialAnswer?: SignalValue | null }) {
+  const discovered = row.value; // the triage-time baseline; stable while the rep edits — revert compares against this
+  // A prior rep override (from gateAnswers, on a back-nav) displays in the row; otherwise the discovered value.
+  const initial = initialAnswer ?? discovered;
+  const [val, setVal] = useState(initial !== null && typeof initial !== 'object' ? String(initial) : '');
+  const [avg, setAvg] = useState(initial !== null && typeof initial === 'object' ? String(Math.round(initial.avgPct * 100)) : '');
+  const [peak, setPeak] = useState(initial !== null && typeof initial === 'object' ? String(Math.round(initial.peakPct * 100)) : '');
 
   const emit = (v: SignalValue | null): void =>
     onAnswer(v === null ? null : { signalId: row.signalId, value: v });
@@ -116,7 +118,11 @@ export function Step4Confirm() {
   const { state, patch, getApiKey } = useWizard();
   const { capture } = useErrors();
   const [report, setReport] = useState<SufficiencyReport | null>(null);
-  const [answers, setAnswers] = useState<Record<string, GateAnswer>>({});
+  // Seed from any prior gate answers so a back-nav (remount) re-displays the rep's adjustments and a
+  // re-confirm cannot wipe them. A fresh mount (gateAnswers = []) seeds {} — behaviour unchanged.
+  const [answers, setAnswers] = useState<Record<string, GateAnswer>>(
+    () => Object.fromEntries((state.gateAnswers ?? []).map((a) => [a.signalId, a])),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [blocked, setBlocked] = useState<string[]>([]);
@@ -125,6 +131,12 @@ export function Step4Confirm() {
     const bundle = state.anonBundle;
     const cfg = state.config;
     if (!bundle || !cfg) return;
+    // Reuse the cached triage on a back-nav (remount): rebuild the report from it, never re-classify
+    // (a second LLM call would be wasteful and would re-show the pre-edit verdict).
+    if (state.triage) {
+      setReport(buildSufficiencyReport(state.triage, bundle.files, MONGODB_PROFILE));
+      return;
+    }
     let alive = true;
     setLoading(true);
     setError('');
@@ -144,7 +156,7 @@ export function Step4Confirm() {
     return () => {
       alive = false;
     };
-  }, [state.anonBundle, state.config, getApiKey, patch, capture]);
+  }, [state.anonBundle, state.config, state.triage, getApiKey, patch, capture]);
 
   // Rows come from the ORIGINAL triage-time report so the discovered baseline + prefill stay
   // stable while the rep edits; only the verdict recomputes live (below).
@@ -225,6 +237,7 @@ export function Step4Confirm() {
           row={r}
           adjusted={r.signalId in answers}
           onAnswer={(a) => setAnswer(r.signalId, a)}
+          initialAnswer={answers[r.signalId]?.value ?? null}
           storageCompression={r.signalId === 'data.storageSizeGb' ? { state: compressionState, onChange: onCompressionChange } : undefined}
         />
       ))}
@@ -232,7 +245,7 @@ export function Step4Confirm() {
       <details class="cf-additional-metrics">
         <summary>Additional Metrics ({form.additional.length})</summary>
         {form.additional.map((r) => (
-          <MetricRowView key={r.signalId} row={r} adjusted={r.signalId in answers} onAnswer={(a) => setAnswer(r.signalId, a)} />
+          <MetricRowView key={r.signalId} row={r} adjusted={r.signalId in answers} onAnswer={(a) => setAnswer(r.signalId, a)} initialAnswer={answers[r.signalId]?.value ?? null} />
         ))}
       </details>
 
