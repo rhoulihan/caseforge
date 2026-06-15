@@ -55,7 +55,7 @@ ${buildHeader({ companyName: m.companyName, preparedDate: m.preparedDate, docume
 <div class="pull">${escapeProse(p.pullQuote)}</div>
 <h2>Recommendation &amp; Next Steps</h2>
 <p>${escapeProse(p.nextSteps)}</p>
-${buildFooter(discounted ? `Preliminary for discussion. Oracle figures reflect a ${fmtPct(m.discountPct)} customer discount off list; your current spend is shown at list. Sourced from verified multi-source research and prior ADB sizing.` : 'Preliminary for discussion. Figures USD list / pre-discount, sourced from verified multi-source research and prior ADB sizing.')}
+${buildFooter(discounted ? `Preliminary for discussion. Oracle figures reflect a ${fmtPct(m.discountPct)} customer discount off list; your current spend is shown at list. Oracle ADB cost is computed from your sizing at Oracle list pricing; current on-prem and migration costs are from multi-source research.` : 'Preliminary for discussion. Figures USD list / pre-discount. Oracle ADB cost is computed from your sizing at Oracle list pricing; current on-prem and migration costs are from multi-source research.')}
 `;
   return { filename: `business-case-${slug(m.companyName)}.html`, html: page(`${m.companyName} — Business Case`, body) };
 }
