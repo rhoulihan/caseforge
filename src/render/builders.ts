@@ -2,10 +2,11 @@
 // engine functions (never re-implement the math) and are pinned to the Northwind goldens by builders.test.
 // They are the single source the orchestrator (and the Northwind fixture's goldens) agree on.
 
-import type { SizingInputs, TcoInputs, Level, Range } from '../engine/types';
+import type { SizingInputs, TcoInputs, Level, Range, StorageBasis } from '../engine/types';
 import { consumedEcpu, baseFor, ceilings } from '../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../engine/tco';
 import { applyDiscount, discountFactor } from '../engine/discount';
+import { deriveOracleCost } from '../engine/adbCost';
 import { coldRtoHours } from '../engine/dr';
 import { buildSizingClaims } from './claims';
 import { ENGINE_CONFIG } from '../engine/config';
@@ -181,6 +182,7 @@ export interface AssembleOptions {
   assumptions: string[];
   rates: EcpuStorageRates;
   dataCompressedGb: number;
+  storageBasis: StorageBasis;
   tcoInputs: TcoInputs;
   sufficiency: SufficiencyReport;
   prose: { businessCase: BusinessCaseProse; sizingBrief: SizingBriefProse; technicalReview: TechnicalReviewProse };
@@ -194,14 +196,19 @@ export interface AssembleOptions {
  * untouched. */
 export function assembleDocModel(o: AssembleOptions): DocModel {
   const discountPct = o.discountPct ?? 0;
-  const tco = buildTcoSection(applyDiscount(o.tcoInputs, discountPct), o.dataCompressedGb);
+  // The proposed Oracle cost is ENGINE-DERIVED from the sizing x list rates (not researched) — so the
+  // business case tracks any sizing adjustment. Research now supplies only on-prem + migration; the
+  // three Oracle ranges in o.tcoInputs are inert placeholders, replaced here before any TCO math.
+  const oracle = deriveOracleCost(o.sizingInputs, o.dataCompressedGb, o.rates);
+  const effTco = { ...o.tcoInputs, adbPrimary: oracle.adbPrimary, coldDrAdd: oracle.coldDrAdd, warmDrAdd: oracle.warmDrAdd };
+  const tco = buildTcoSection(applyDiscount(effTco, discountPct), o.dataCompressedGb);
   // The discount applies to the whole PROPOSED Oracle cost, so the sizing-scenario ECPU/storage costs
   // (the indicative ADB cost shown in the Sizing Brief) are discounted by the same factor — keeping every
   // customer-facing Oracle figure consistent. Provisioning (ECPU counts) is unaffected; rates only scale price.
   const f = discountFactor(discountPct);
   const scenarioRates = f === 1 ? o.rates : { ...o.rates, ecpuPerHr: o.rates.ecpuPerHr * f, storagePerGbMo: o.rates.storagePerGbMo * f };
   // When discounted, also carry the pre-discount (list) ADB annual so the renderer can show list-vs-net.
-  const listAdbAnnual = discountPct > 0 ? { warm: adbTotal(o.tcoInputs, 'warm', 'central'), cold: adbTotal(o.tcoInputs, 'cold', 'central') } : undefined;
+  const listAdbAnnual = discountPct > 0 ? { warm: adbTotal(effTco, 'warm', 'central'), cold: adbTotal(effTco, 'cold', 'central') } : undefined;
   const basis: SizingBasis = {
     shards: o.sizingInputs.shards,
     hoVcpu: o.sizingInputs.hoVcpu,
@@ -226,7 +233,8 @@ export function assembleDocModel(o: AssembleOptions): DocModel {
     documentStatus: o.documentStatus,
     discountPct,
     listAdbAnnual,
-    sizing: { basis, consumed, scenarios, dataCompressedGb: o.dataCompressedGb },
+    sizing: { basis, consumed, scenarios, dataCompressedGb: o.dataCompressedGb,
+      storageRawGb: o.storageBasis.rawGb, storageCompressed: o.storageBasis.compressed, storageCompressionRatio: o.storageBasis.ratio },
     tco,
     charts: { cost: buildCostChartData(o.companyName, tco), fiveYear: buildFiveYearChartData(tco) },
     sufficiency: o.sufficiency,

@@ -62,8 +62,8 @@ describe('generateProse', () => {
     const ctx = buildProseContext(m);
     expect(ctx).toContain('3 shards');
     expect(ctx).toContain('$450K');
-    expect(ctx).toContain('$214K');
-    expect(ctx).toContain('52%');
+    expect(ctx).toContain('$222K');
+    expect(ctx).toContain('51%');
   });
 
   it('adds a discount note to the context only when a discount applies (so prose calls it "your price", not list)', () => {

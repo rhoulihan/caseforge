@@ -503,28 +503,50 @@ body {
 .cf-verdict.blocked .cf-vbadge {
   background: var(--cf-red);
 }
-.cf-gate {
-  border: 1px solid #fde68a;
-  background: #fffdf5;
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
+.cf-metricrow {
+  border-top: 1px solid var(--cf-border);
+  padding: 10px 0;
 }
-.cf-gate-head {
-  margin-bottom: 2px;
-}
-.cf-gate-input {
+.cf-metricrow .cf-metric-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+}
+.cf-metric-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 6px;
 }
-.cf-gate-input input[type='number'] {
-  width: 90px;
-  padding: 5px 8px;
+.cf-metric-inputs input {
+  width: 120px;
+  padding: 6px 8px;
   border: 1px solid var(--cf-border);
   border-radius: 6px;
   font: inherit;
+}
+.cf-compression select {
+  padding: 6px 8px;
+  border: 1px solid var(--cf-border);
+  border-radius: 6px;
+  font: inherit;
+  background: #fff;
+}
+.cf-adjusted {
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 99px;
+  padding: 1px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.cf-additional-metrics {
+  margin-top: 14px;
+}
+.cf-additional-metrics summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--cf-slate-2);
 }
 
 /* --- Cost ticker --- */

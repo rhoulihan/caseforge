@@ -17,6 +17,19 @@ export interface AdbRates {
   storagePerGbMo: number;
   /** Billing hours per month used to annualize the ECPU rate (730 = 365×24/12). */
   hoursPerMonth: number;
+  /** Assumed Oracle on-disk compression of an UNCOMPRESSED storage estimate (effective = uncompressed /
+   * ratio). 3x = conservative midpoint of Advanced Row Compression (2-4x) and OSON (~2.7-3x vs BSON).
+   * Source: Oracle Advanced Compression FAQ; Oracle JSON-vs-MongoDB (OSON). Tune here when guidance changes. */
+  compressionRatio: number;
+  /** OCI Object Storage (Standard) list rate, USD per GB-month — used for cold-DR backup copies (cheaper
+   * than database storage, which is why cold DR << warm). Source: OCI Object Storage pricing. */
+  backupStoragePerGbMo: number;
+  /** Autonomous Data Guard cross-region peer is billed the base CPUs + this multiple of the primary's
+   * DATABASE storage. 2x per Oracle ADG cross-region billing. */
+  warmStandbyStorageMult: number;
+  /** Cold (backup-based) cross-region DR keeps this multiple of the data as object-storage backup copies.
+   * 2x per Oracle ADB Serverless cross-region backup billing. */
+  coldBackupStorageMult: number;
 }
 
 /** Compute-sizing knobs (the Peak÷N provisioning model + autoscale band). */
@@ -58,6 +71,10 @@ export interface EngineConfig {
  * SOURCES (update these when the Oracle team revises pricing/guidance, then refresh the goldens):
  *  - adb.ecpuPerHr / adb.storagePerGbMo .... Oracle Autonomous Database public list pricing.
  *  - adb.hoursPerMonth = 730 ............... standard cloud-billing month (365×24/12).
+ *  - adb.compressionRatio = 3 ............. uncompressed->on-disk; Oracle Advanced Compression 2-4x / OSON ~2.7-3x.
+ *  - adb.backupStoragePerGbMo = 0.0255 .... OCI Object Storage (Standard) list pricing (cold-DR backups).
+ *  - adb.warmStandbyStorageMult = 2 ....... Oracle ADG cross-region: peer billed base CPUs + 2x DB storage.
+ *  - adb.coldBackupStorageMult = 2 ........ Oracle ADB cross-region backup: 2x replicated backup storage.
  *  - sizing divisors + autoscaleMultipliers  CaseForge Peak÷N provisioning model (SIZING-METHODOLOGY.md §1).
  *  - sizing.ecpuPerVcpu = 1 ................ Phase-1 maps consumed vCPU to ECPU 1:1.
  *  - dr.coldRto* ........................... Oracle backup-restore rule of thumb: 1 h + 1 h per 5 TB.
@@ -67,7 +84,8 @@ export interface EngineConfig {
  *                                            intentionally omitted so an unknown tier becomes a gate ask.
  */
 export const ENGINE_CONFIG: EngineConfig = {
-  adb: { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, hoursPerMonth: 730 },
+  adb: { ecpuPerHr: 0.0807, storagePerGbMo: 0.1156, hoursPerMonth: 730, compressionRatio: 3,
+         backupStoragePerGbMo: 0.0255, warmStandbyStorageMult: 2, coldBackupStorageMult: 2 },
   sizing: { conservativeDivisor: 2, aggressiveDivisor: 3, autoscaleMultipliers: [2, 3], ecpuPerVcpu: 1 },
   dr: { coldRtoBaseHours: 1, coldRtoHoursPerTb: 0.2 },
   atlasTierVcpu: { M10: 2, M20: 2, M30: 2, M40: 4, M50: 8, M60: 16, M80: 32, M140: 48, M200: 64, M300: 96 },

@@ -11,7 +11,7 @@ import type { LLM } from '../provider';
 const topology: KeyValuePrimitive = {
   kind: 'keyvalue',
   source: 'topology.txt',
-  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '45800' },
+  pairs: { shards: '3', 'cores per node': '32', 'dr cores': '16', 'storage size': '45800', compressed: 'compressed' },
 };
 // Engineered so seriesStats mean=avg, max=peak (then /100 -> the Northwind fractions).
 const utilTable: TablePrimitive = {
@@ -56,6 +56,8 @@ const baseConfig = (): RunConfig => ({
 function configWithStorageGb(storageGb: number): RunConfig {
   const overriddenTopology: KeyValuePrimitive = {
     ...topology,
+    // topology already marks the figure compressed (on-disk) so effective == raw — this test pins the
+    // threading, not the compression factor (the factor's own goldens live in triage.test / storage.test).
     pairs: { ...topology.pairs, 'storage size': String(storageGb) },
   };
   return {
@@ -71,7 +73,7 @@ describe('runPipeline', () => {
     expect(out.gate.blocked).toBe(false);
     expect(out.docModel).toBeDefined();
     expect(out.docModel!.sizing.scenarios[0]!.base).toBe(22);
-    expect(out.docModel!.tco.adbWarmAnnual.central).toBe(213649);
+    expect(out.docModel!.tco.adbWarmAnnual.central).toBe(221706);
     expect(out.docModel!.prose.businessCase.execSummary.length).toBeGreaterThan(0);
     expect(out.rendered).toHaveLength(4);
     for (const r of out.rendered) {

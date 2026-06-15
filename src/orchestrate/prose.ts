@@ -85,7 +85,11 @@ export function buildProseContext(d: Omit<DocModel, 'prose' | 'claims'>, qualCon
     'WORKLOAD (topology facts):',
     `- Cluster: ${b.shards} shards, ${b.hoVcpu} vCPU per home node, ${b.drVcpu} vCPU per DR node.`,
     `- Primary System-CPU: avg ${Math.round(b.util.primary.avgPct * 100)}% / peak ${Math.round(b.util.primary.peakPct * 100)}%; avg-to-peak ratio ${d.sizing.consumed.ratio}x.`,
-    `- On-disk (compressed) data: ${(d.sizing.dataCompressedGb / 1000).toFixed(1)} TB.`,
+    `- On-disk (compressed) data: ${(d.sizing.dataCompressedGb / 1000).toFixed(1)} TB${
+      d.sizing.storageCompressed
+        ? ''
+        : ` (effective; from a ${(d.sizing.storageRawGb / 1000).toFixed(1)} TB uncompressed estimate at an assumed ${d.sizing.storageCompressionRatio}x Oracle compression factor)`
+    }.`,
     '',
     'AUTHORITATIVE FIGURES (already computed — reference these, do not invent others):',
     ...(d.discountPct > 0

@@ -147,6 +147,7 @@ export async function runPipeline(config: RunConfig): Promise<PipelineOutput> {
     assumptions: config.assumptions,
     rates: config.rates,
     dataCompressedGb: applied.dataCompressedGb!,
+    storageBasis: applied.storageBasis!,
     tcoInputs: config.tcoInputs,
     discountPct: config.discountPct,
     sufficiency: applied.sufficiency,

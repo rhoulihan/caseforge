@@ -17,6 +17,9 @@ const triage = {
     { signalId: 'util.hoSec', value: { avgPct: 0.12, peakPct: 0.35 }, method: 'numeric-series', confidence: 0.95, evidence: [] },
     { signalId: 'util.dr', value: { avgPct: 0.08, peakPct: 0.2 }, method: 'numeric-series', confidence: 0.95, evidence: [] },
     { signalId: 'data.storageSizeGb', value: 2000, method: 'numeric-series', confidence: 1, evidence: [] },
+    // Marked compressed (on-disk) so effective == raw — this fixture pins the storage threading, not the
+    // compression factor (toSizingInputs divides an uncompressed figure; its goldens live in triage.test).
+    { signalId: 'data.storageCompressionState', value: 'compressed', method: 'keyvalue', confidence: 1, evidence: [] },
   ],
 } as unknown as TriageResult;
 

@@ -29,7 +29,9 @@ export interface TcoProfile {
 }
 
 export const ONPREM_COMPONENTS = ['license', 'hardware', 'storage', 'facility', 'labor', 'backup'] as const;
-export const CLOUD_COMPONENTS = ['adbPrimary', 'coldDrAdd', 'warmDrAdd', 'migrationPs'] as const;
+// The Oracle side (adbPrimary/coldDrAdd/warmDrAdd) is ENGINE-DERIVED in assembleDocModel from the sizing
+// x list rates — it is NOT researched. Research now covers only the one-time migration on the cloud side.
+export const CLOUD_COMPONENTS = ['migrationPs'] as const;
 export const ALL_COMPONENTS = [...ONPREM_COMPONENTS, ...CLOUD_COMPONENTS] as const;
 export type CostComponent = (typeof ALL_COMPONENTS)[number];
 
@@ -92,7 +94,7 @@ export const TCO_RESEARCH_SCHEMA: JsonSchema = {
   schema: {
     type: 'object',
     additionalProperties: false,
-    required: ['onpremComponents', 'adbPrimary', 'coldDrAdd', 'warmDrAdd', 'migrationPs', 'sources'],
+    required: ['onpremComponents', 'migrationPs', 'sources'],
     properties: {
       onpremComponents: {
         type: 'object',
@@ -100,9 +102,6 @@ export const TCO_RESEARCH_SCHEMA: JsonSchema = {
         required: [...ONPREM_COMPONENTS],
         properties: ONPREM_PROPS,
       },
-      adbPrimary: RANGE_SCHEMA,
-      coldDrAdd: RANGE_SCHEMA,
-      warmDrAdd: RANGE_SCHEMA,
       migrationPs: RANGE_SCHEMA,
       sources: {
         type: 'array',
@@ -199,11 +198,14 @@ export function normalizeAndValidate(parsed: unknown): { inputs: TcoInputs; sour
   const opObj = p.onpremComponents as Record<string, unknown>;
   const onpremComponents: Record<string, Range> = {};
   for (const c of ONPREM_COMPONENTS) onpremComponents[c] = normalizeRange(`onpremComponents.${c}`, opObj[c]);
+  const ZERO: Range = { low: 0, central: 0, high: 0 };
   const inputs: TcoInputs = {
     onpremComponents,
-    adbPrimary: normalizeRange('adbPrimary', p.adbPrimary),
-    coldDrAdd: normalizeRange('coldDrAdd', p.coldDrAdd),
-    warmDrAdd: normalizeRange('warmDrAdd', p.warmDrAdd),
+    // adbPrimary/coldDrAdd/warmDrAdd are engine-derived in assembleDocModel; not researched. These zero
+    // placeholders keep the TcoInputs shape intact and are overridden before any cost is computed.
+    adbPrimary: { ...ZERO },
+    coldDrAdd: { ...ZERO },
+    warmDrAdd: { ...ZERO },
     migrationPs: normalizeRange('migrationPs', p.migrationPs),
   };
   return { inputs, sources: validateSources(p.sources) };
@@ -243,12 +245,14 @@ function buildResearchPrompt(profile: TcoProfile): string {
     ? `, DR posture "${profile.drPosture}"`
     : ', evaluate both warm-standby and cold (backup-based) DR';
   return [
-    `Research CURRENT market cost figures to compare a ${lic}${profile.dbType} on-premises deployment against Oracle Autonomous Database (ADB).`,
+    `Research CURRENT market cost figures for a ${lic}${profile.dbType} on-premises deployment (the customer's current cost) plus the one-time migration to Oracle Autonomous Database (ADB).`,
     `Workload topology: ${profile.shards} shard(s), ${profile.hoVcpu} primary vCPU, ${profile.drVcpu} DR vCPU, ${profile.dataCompressedGb} GB compressed data${drLine}.`,
+    '',
+    'The proposed Oracle ADB cost (primary + warm/cold DR) is computed from the sizing above and is NOT researched here. Research only the on-premises build-up and the one-time migration.',
     '',
     'Return JSON matching the schema. Provide a low/central/high range in whole USD for EACH of:',
     '- onpremComponents: license, hardware, storage, facility, labor, backup (annual USD/yr).',
-    '- adbPrimary (annual USD/yr), coldDrAdd (annual USD/yr), warmDrAdd (annual USD/yr), migrationPs (one-time USD).',
+    '- migrationPs (one-time USD).',
     '',
     'For every figure, cite at least one source in "sources". Set sourceQuality="published" for vendor/analyst list pricing (include the URL), "synthesized" for a triangulated estimate (include the best URL), or "training-cutoff" if you did NOT retrieve it from the web (url may be empty). Always include asOfDate as YYYY-MM-DD. Do not output NaN, Infinity, null, or negative numbers.',
   ].join('\n');
@@ -346,25 +350,13 @@ const COMPONENT_META: Record<CostComponent, { claim: string; unit: string }> = {
   facility: { claim: 'On-prem facility cost (researched)', unit: 'USD/yr' },
   labor: { claim: 'On-prem labor cost (researched)', unit: 'USD/yr' },
   backup: { claim: 'On-prem backup cost (researched)', unit: 'USD/yr' },
-  adbPrimary: { claim: 'ADB primary annual cost (researched)', unit: 'USD/yr' },
-  coldDrAdd: { claim: 'Cold-DR incremental cost (researched)', unit: 'USD/yr' },
-  warmDrAdd: { claim: 'Warm-DR incremental cost (researched)', unit: 'USD/yr' },
   migrationPs: { claim: 'Migration professional services (researched)', unit: 'USD' },
 };
 
 function centralOf(inputs: TcoInputs, c: CostComponent): number {
-  switch (c) {
-    case 'adbPrimary':
-      return inputs.adbPrimary.central;
-    case 'coldDrAdd':
-      return inputs.coldDrAdd.central;
-    case 'warmDrAdd':
-      return inputs.warmDrAdd.central;
-    case 'migrationPs':
-      return inputs.migrationPs.central;
-    default:
-      return inputs.onpremComponents[c]!.central;
-  }
+  // The Oracle ranges are engine-derived (not researched), so the only cloud component here is migrationPs.
+  if (c === 'migrationPs') return inputs.migrationPs.central;
+  return inputs.onpremComponents[c]!.central;
 }
 
 /**

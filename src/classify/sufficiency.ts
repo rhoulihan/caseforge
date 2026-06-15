@@ -2,7 +2,9 @@
 // over the TriageResult classify produced + the file list. No LLM, no randomness, no Date.now:
 // same input -> same report (mirrors src/engine/sizing + src/anon/mapping). Confidence is method-
 // capped HERE (the cap policy lives on the profile), so vision-read util can never be called
-// engineering-grade and a defaulted required signal can never masquerade as a measurement.
+// engineering-grade, a defaulted required signal can never masquerade as a measurement, and a
+// rep-entered required signal (rep-gate-answer evidence) always demotes the tier to directional
+// (Policy B).
 
 import type { SourceProfile, SignalSpec } from '../profile/types';
 import type { FileReport } from '../ingest/types';
@@ -58,6 +60,7 @@ function buildCoverage(profile: SourceProfile, bindings: BindingResult[]): Signa
       method: b?.method ?? null,
       value: b?.value ?? null,
       evidence: b?.evidence ?? [],
+      repEntered: !!b && b.evidence.some((e) => e.source === 'rep-gate-answer'), // protocol value: matches the evidence source emitted by gate.ts applyGateAnswers
       reason,
     };
   });
@@ -74,25 +77,36 @@ function computeVerdict(
   const partial = req.filter((c) => c.status === 'partial');
   const satisfied = req.filter((c) => c.status === 'satisfied');
   const mean = req.length ? req.reduce((a, c) => a + c.effectiveConfidence, 0) / req.length : 0;
-  const hasAssumed = req.some((c) => c.method === 'assumption-default');
+  const repEntered = req.filter((c) => c.repEntered);
 
   let tier: ResultTier;
   if (missing.length > 0) tier = 'blocked';
-  else if (partial.length === 0 && req.every((c) => c.effectiveConfidence >= engFloor) && mean >= engMean && !hasAssumed)
+  else if (partial.length === 0 && req.every((c) => c.effectiveConfidence >= engFloor) && mean >= engMean && repEntered.length === 0)
     tier = 'engineering-grade';
   else tier = 'directional-estimate';
 
-  const limiting = (tier === 'blocked' ? missing : req.filter((c) => c.effectiveConfidence < engFloor)).map((c) => c.signalId);
+  const limiting = (tier === 'blocked' ? missing : [...new Set([...req.filter((c) => c.effectiveConfidence < engFloor), ...repEntered])]).map((c) => c.signalId);
   const labelOf = (id: string) => specById.get(id)?.label ?? id;
   const first2 = limiting.slice(0, 2).map(labelOf).join(', ');
+
+  // True when all limiting signals are rep-entered (already at/above the floor — the gap is
+  // evidence quality, not signal presence).
+  const allRepLimited =
+    repEntered.length > 0 &&
+    req.every((c) => c.repEntered || c.effectiveConfidence >= engFloor) &&
+    partial.length === 0;
 
   let headline: string;
   if (tier === 'blocked') headline = `Blocked — ${missing.length} required signal(s) missing${first2 ? ': ' + first2 : ''}`;
   else if (tier === 'engineering-grade') headline = 'Engineering-grade — all required signals satisfied';
-  else headline = `Directional estimate — collect ${first2} to reach an engineering-grade number`;
+  else
+    headline = allRepLimited
+      ? `Directional estimate — rep-entered ${first2}; replace with file evidence to reach engineering-grade`
+      : `Directional estimate — collect ${first2} to reach an engineering-grade number`;
 
   let rationale = `${satisfied.length}/${req.length} required signals satisfied (mean confidence ${mean.toFixed(2)}).`;
   if (tier === 'directional-estimate' && limiting.length) rationale += ` Limited by: ${limiting.map(labelOf).join(', ')}.`;
+  if (repEntered.length) rationale += ` Rep-entered/adjusted: ${repEntered.map((c) => labelOf(c.signalId)).join(', ')} -> directional.`;
   const missingTco = coverage.filter(
     (c) => c.criticality !== 'required' && specById.get(c.signalId)?.tcoCritical && c.status !== 'satisfied',
   );

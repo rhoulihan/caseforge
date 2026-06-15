@@ -15,12 +15,12 @@ describe('Northwind DocModel — engine-derived consistency (the renderer reads,
 
   it('reproduces the TCO goldens', () => {
     expect(m.tco.onprem.total.central).toBe(449500);
-    expect(m.tco.adbWarmAnnual.central).toBe(213649);
-    expect(m.tco.adbColdAnnual.central).toBe(107746);
-    expect(m.tco.savingWarm.pct).toBe(52);
-    expect(m.tco.fiveYear.net5Warm).toBe(712478);
-    expect(m.tco.fiveYear.net5Cold).toBe(1136090);
-    expect(m.tco.fiveYear.paybackYearWarm).toBe(2);
+    expect(m.tco.adbWarmAnnual.central).toBe(221706);
+    expect(m.tco.adbColdAnnual.central).toBe(107116);
+    expect(m.tco.savingWarm.pct).toBe(51);
+    expect(m.tco.fiveYear.net5Warm).toBe(682090);
+    expect(m.tco.fiveYear.net5Cold).toBe(1140450);
+    expect(m.tco.fiveYear.paybackYearWarm).toBe(3);
   });
 
   it('every scenario total equals the sum of its parts', () => {
@@ -41,7 +41,7 @@ describe('Northwind DocModel — engine-derived consistency (the renderer reads,
   it('the business case renders the headline numbers consistently', () => {
     const html = renderBusinessCase(m).html;
     expect(html).toContain('$450K');
-    expect(html).toContain('$214K');
-    expect(html).toContain('52%');
+    expect(html).toContain('$222K');
+    expect(html).toContain('51%');
   });
 });

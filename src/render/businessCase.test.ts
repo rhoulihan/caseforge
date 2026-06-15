@@ -28,9 +28,9 @@ describe('renderBusinessCase', () => {
 
   it('shows the headline numbers read verbatim from the DocModel', () => {
     expect(out.html).toContain('$450K'); // on-prem total
-    expect(out.html).toContain('$214K'); // ADB warm
-    expect(out.html).toContain('52%'); // saving pct (read, not recomputed)
-    expect(out.html).toContain('~Yr 2'); // payback
+    expect(out.html).toContain('$222K'); // ADB warm
+    expect(out.html).toContain('51%'); // saving pct (read, not recomputed)
+    expect(out.html).toContain('~Yr 3'); // payback
   });
 
   it('escapes prose (no XSS)', () => {
@@ -39,9 +39,18 @@ describe('renderBusinessCase', () => {
     expect(renderBusinessCase(evil).html).not.toContain('<script>alert(1)</script>');
   });
 
-  it('renders the h1 with a correctly-encoded apostrophe (not double-escaped)', () => {
-    expect(out.html).toContain('Halve Northwind&#39;s Database TCO');
-    expect(out.html).not.toContain('&amp;#39;');
+  it('renders the h1 from the engine-computed saving (not a fixed "halve") with a correctly-encoded apostrophe', () => {
+    expect(out.html).toContain(`Cut Northwind&#39;s Database TCO by ${NORTHWIND_DOCMODEL.tco.savingWarm.pct}%`);
+    expect(out.html).not.toContain('Halve'); // no baked-in ~50% assumption
+    expect(out.html).not.toContain('&amp;#39;'); // apostrophe encoded once, not double-escaped
+  });
+
+  it('falls back to a neutral h1 when ADB is not cheaper (non-positive saving)', () => {
+    const m = structuredClone(NORTHWIND_DOCMODEL);
+    m.tco.savingWarm = { amount: -1000, pct: -1 };
+    const html = renderBusinessCase(m).html;
+    expect(html).toContain('Northwind&#39;s Database TCO Analysis');
+    expect(html).not.toContain('by -1%');
   });
 
   it('embeds a cost chart that respects the house-style invariants', () => {

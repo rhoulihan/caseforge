@@ -158,4 +158,62 @@ describe('Step5Generate', () => {
     expect((runPipeline.mock.calls[0]![0] as { proseInstruction?: string }).proseInstruction).toBe('be concise'); // carried note applied
     await waitFor(() => expect(screen.getByTestId('mode').textContent).toBe('false')); // add-files flag cleared
   });
+
+  it('threads a Step-5 narrative tuning note into the run as a fail-closed proseInstruction', async () => {
+    runPipeline.mockClear();
+    runPipeline.mockImplementation(async () => ({
+      docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, companyName: 'Acme', discountPct: 0 },
+      rendered: [{ filename: 'business-case-acme.html', html: '<x/>' }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      budgetLog: [],
+      gate: { items: [], blocked: false, reasons: [] },
+    }));
+    // anonymize is the fail-closed slugger; here the note has no real names, so it passes through unchanged.
+    const launcher = {
+      health: async () => true,
+      saveArchive: async () => undefined,
+      anonymize: async (_m: unknown, text: string) => ({ text, count: 0 }),
+    } as unknown as LauncherClient;
+    render(
+      <ErrorProvider>
+        <WizardProvider launcher={launcher} initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage, map: [{ phrase: 'Acme', slug: 'CF_ORG_01' }] }}>
+          <Step5Generate />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    // lowercase note — no Title-Case tokens for the fail-closed detector to flag as an unmapped name.
+    fireEvent.input(screen.getByLabelText(/Narrative tuning/i), { target: { value: 'emphasize dr resilience and keep it tight' } });
+    fireEvent.click(screen.getByText(/Generate deliverables/i));
+    await waitFor(() => expect(runPipeline).toHaveBeenCalledTimes(1));
+    // the tuning note flows through the fail-closed prepare path into the run as proseInstruction
+    expect((runPipeline.mock.calls[0]![0] as { proseInstruction?: string }).proseInstruction).toBe('emphasize dr resilience and keep it tight');
+  });
+
+  it('blocks generate when the narrative note names someone not in the anonymization map', async () => {
+    runPipeline.mockClear();
+    runPipeline.mockImplementation(async () => ({
+      docModel: { sufficiency: { verdict: { tier: 'directional-estimate' } }, companyName: 'Acme', discountPct: 0 },
+      rendered: [{ filename: 'business-case-acme.html', html: '<x/>' }],
+      usage: { inputTokens: 0, outputTokens: 0 },
+      budgetLog: [],
+      gate: { items: [], blocked: false, reasons: [] },
+    }));
+    const launcher = {
+      health: async () => true,
+      saveArchive: async () => undefined,
+      anonymize: async (_m: unknown, text: string) => ({ text, count: 0 }),
+    } as unknown as LauncherClient;
+    render(
+      <ErrorProvider>
+        <WizardProvider launcher={launcher} initial={{ config: { provider: 'claude', companyName: 'Acme', tokenBudget: 100_000, discountPct: 0 }, hasApiKey: true, bundle: anonBundle, anonBundle, triage, map: [{ phrase: 'Acme', slug: 'CF_ORG_01' }] }}>
+          <Step5Generate />
+        </WizardProvider>
+      </ErrorProvider>,
+    );
+    // "Jane Okafor" is an unmapped proper-noun name — fail-closed must block before any LLM call.
+    fireEvent.input(screen.getByLabelText(/Narrative tuning/i), { target: { value: 'Quote Jane Okafor in the exec summary' } });
+    fireEvent.click(screen.getByText(/Generate deliverables/i));
+    await screen.findByText(/Step 3 \(Anonymize\)/i); // the Step-3-pointer error
+    expect(runPipeline).not.toHaveBeenCalled(); // blocked — nothing sent to the LLM
+  });
 });

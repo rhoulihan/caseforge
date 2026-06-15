@@ -64,6 +64,14 @@ describe('MONGODB_PROFILE signal schema', () => {
     expect(storage!.derivableBy).toContain('llm-text');
   });
 
+  it('has a storage compression-state companion signal (recommended enum, default uncompressed)', () => {
+    const s = MONGODB_PROFILE.signalSchema.signals.find((x) => x.id === 'data.storageCompressionState')!;
+    expect(s).toBeTruthy();
+    expect(s.criticality).toBe('recommended');
+    expect(s.valueKind).toBe('enum');
+    expect(s.engineSlot).toBeUndefined();
+  });
+
   it('defines a full set of method caps and tier floors', () => {
     const t = MONGODB_PROFILE.thresholds;
     expect(t.methodCap['numeric-series']).toBe(1);

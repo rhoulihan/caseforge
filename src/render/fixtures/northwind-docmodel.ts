@@ -7,6 +7,7 @@ import { NORTHWIND_SIZING } from '../../engine/fixtures/northwind-sizing';
 import { NORTHWIND } from '../../engine/fixtures/northwind';
 import { consumedEcpu, baseFor, ceilings } from '../../engine/sizing';
 import { onpremTotal, adbTotal, annualSaving, fiveYear, net5, paybackYear } from '../../engine/tco';
+import { deriveOracleCost } from '../../engine/adbCost';
 import { coldRtoHours } from '../../engine/dr';
 import { ENGINE_CONFIG } from '../../engine/config';
 import { PALETTE } from '../../charts/svg';
@@ -20,6 +21,11 @@ const ECPU_PER_HR = ENGINE_CONFIG.adb.ecpuPerHr;
 const HRS_PER_MO = ENGINE_CONFIG.adb.hoursPerMonth;
 const STORAGE_PER_GB_MO = ENGINE_CONFIG.adb.storagePerGbMo;
 const DATA_COMPRESSED_GB = 45_800; // ~45.8 TB on-disk (compressed)
+
+// The Oracle (proposed) cost is ENGINE-DERIVED from the sizing x list rates — exactly what
+// assembleDocModel now computes — so this golden tracks the sizing instead of static research lumps.
+const ORACLE = deriveOracleCost(NORTHWIND_SIZING, DATA_COMPRESSED_GB, { ecpuPerHr: ECPU_PER_HR, storagePerGbMo: STORAGE_PER_GB_MO, hoursPerMonth: HRS_PER_MO });
+const NORTHWIND_EFF = { ...NORTHWIND, adbPrimary: ORACLE.adbPrimary, coldDrAdd: ORACLE.coldDrAdd, warmDrAdd: ORACLE.warmDrAdd };
 
 const consumed = consumedEcpu(NORTHWIND_SIZING, 'workload'); // { avg 17.28, peak 43.2, ratio 2.5 }
 
@@ -46,13 +52,13 @@ function scenario(posture: 'conservative' | 'aggressive', n: number): SizingScen
 const range = (fn: (l: Level) => number): Range => ({ low: fn('low'), central: fn('central'), high: fn('high') });
 const cumsum = (xs: number[]): number[] => xs.map(((s) => (x: number) => (s += x))(0));
 
-const fyWarm = fiveYear(NORTHWIND, 'warm', 'central');
-const fyCold = fiveYear(NORTHWIND, 'cold', 'central');
+const fyWarm = fiveYear(NORTHWIND_EFF, 'warm', 'central');
+const fyCold = fiveYear(NORTHWIND_EFF, 'cold', 'central');
 // Cumulative streams computed ONCE and shared by the TCO section + the chart spec (no drift).
 const statusQuoCum = cumsum(fyWarm.B);
 const warmCum = cumsum(fyWarm.A);
 const coldCum = cumsum(fyCold.A);
-const net5WarmLabel = `Net ~${fmtUsd(net5(NORTHWIND, 'warm'))} over 5 years (warm DR)`;
+const net5WarmLabel = `Net ~${fmtUsd(net5(NORTHWIND_EFF, 'warm'))} over 5 years (warm DR)`;
 
 // A representative engineering-grade SufficiencyReport (native CPU series + confirmed topology).
 const cov = (
@@ -70,6 +76,7 @@ const cov = (
   method,
   value: null,
   evidence: [{ source: 'ops-manager-export.csv', primitiveKind: 'table' }],
+  repEntered: false,
   reason: `${method} (confidence ${effectiveConfidence.toFixed(2)})`,
 });
 
@@ -106,9 +113,9 @@ const sufficiency: SufficiencyReport = {
 
 const claims: ClaimInput[] = [
   { id: 'A1', section: 'A', claim: 'Fully-loaded on-prem MongoDB cost', value: '$450K/yr', unit: 'USD/yr', derived: true, declaredSource: { label: 'Dossier: on-prem build-up', confidence: 'medium' } },
-  { id: 'A2', section: 'A', claim: 'Oracle ADB + warm DR cost', value: '$214K/yr', unit: 'USD/yr', declaredSource: { label: 'Oracle published ECPU/storage pricing', confidence: 'high' } },
-  { id: 'A3', section: 'A', claim: 'Lower annual cost', value: '52%', unit: '%', derived: true, declaredSource: { label: 'Derived: on-prem − ADB warm', confidence: 'medium' } },
-  { id: 'A4', section: 'A', claim: 'Five-year net saving (warm DR)', value: '$712K', unit: 'USD', derived: true, declaredSource: { label: 'Derived: 5-yr streams', confidence: 'medium' } },
+  { id: 'A2', section: 'A', claim: 'Oracle ADB + warm DR cost', value: '$222K/yr', unit: 'USD/yr', declaredSource: { label: 'Oracle published ECPU/storage pricing', confidence: 'high' } },
+  { id: 'A3', section: 'A', claim: 'Lower annual cost', value: '51%', unit: '%', derived: true, declaredSource: { label: 'Derived: on-prem − ADB warm', confidence: 'medium' } },
+  { id: 'A4', section: 'A', claim: 'Five-year net saving (warm DR)', value: '$682K', unit: 'USD', derived: true, declaredSource: { label: 'Derived: 5-yr streams', confidence: 'medium' } },
   { id: 'B1', section: 'B', claim: 'MongoDB Enterprise Advanced subscription', value: '$240K/yr', unit: 'USD/yr', declaredSource: { label: 'Dossier: reseller/G-Cloud triangulation (not public)', confidence: 'medium' } },
   { id: 'C1', section: 'C', claim: 'Peak consumed compute (workload)', value: '43.2 ECPU', unit: 'ECPU', dependsOnSignals: ['util.primary', 'util.hoSec', 'util.dr', 'node.hoVcpu', 'cluster.shardCount'] },
   { id: 'C2', section: 'C', claim: 'Conservative provisioned base (Peak÷2)', value: '22 ECPU', unit: 'ECPU', dependsOnSignals: ['util.primary', 'node.hoVcpu', 'cluster.shardCount'] },
@@ -139,10 +146,13 @@ export const NORTHWIND_DOCMODEL: DocModel = {
     consumed,
     scenarios: [scenario('conservative', 2), scenario('aggressive', 3)],
     dataCompressedGb: DATA_COMPRESSED_GB,
+    storageRawGb: DATA_COMPRESSED_GB,
+    storageCompressed: true,
+    storageCompressionRatio: 3,
   },
   tco: {
     onprem: {
-      components: NORTHWIND.onpremComponents,
+      components: NORTHWIND_EFF.onpremComponents,
       labels: {
         license: 'MongoDB Enterprise Advanced',
         hardware: 'Servers (amortized)',
@@ -151,26 +161,26 @@ export const NORTHWIND_DOCMODEL: DocModel = {
         labor: 'DBA labor (loaded)',
         backup: 'Backup / DR tooling',
       },
-      total: range((l) => onpremTotal(NORTHWIND, l)),
+      total: range((l) => onpremTotal(NORTHWIND_EFF, l)),
     },
-    adbWarmAnnual: range((l) => adbTotal(NORTHWIND, 'warm', l)),
-    adbColdAnnual: range((l) => adbTotal(NORTHWIND, 'cold', l)),
-    savingWarm: annualSaving(NORTHWIND, 'warm'),
-    savingCold: annualSaving(NORTHWIND, 'cold'),
+    adbWarmAnnual: range((l) => adbTotal(NORTHWIND_EFF, 'warm', l)),
+    adbColdAnnual: range((l) => adbTotal(NORTHWIND_EFF, 'cold', l)),
+    savingWarm: annualSaving(NORTHWIND_EFF, 'warm'),
+    savingCold: annualSaving(NORTHWIND_EFF, 'cold'),
     fiveYear: {
       years: ['Yr 1', 'Yr 2', 'Yr 3', 'Yr 4', 'Yr 5'],
       statusQuoCum,
       warmCum,
       coldCum,
-      net5Warm: net5(NORTHWIND, 'warm'),
-      net5Cold: net5(NORTHWIND, 'cold'),
-      paybackYearWarm: paybackYear(NORTHWIND, 'warm'),
-      migrationServices: NORTHWIND.migrationPs,
+      net5Warm: net5(NORTHWIND_EFF, 'warm'),
+      net5Cold: net5(NORTHWIND_EFF, 'cold'),
+      paybackYearWarm: paybackYear(NORTHWIND_EFF, 'warm'),
+      migrationServices: NORTHWIND_EFF.migrationPs,
       transitionYearCost: fyWarm.A[0]!,
     },
     dr: [
-      { posture: 'warm', addedAnnual: NORTHWIND.warmDrAdd, totalAnnual: range((l) => adbTotal(NORTHWIND, 'warm', l)), rtoText: '< 10 min', rpoText: '0 (switchover) / ≤ 1 min (failover)', failover: 'manual cross-region' },
-      { posture: 'cold', addedAnnual: NORTHWIND.coldDrAdd, totalAnnual: range((l) => adbTotal(NORTHWIND, 'cold', l)), rtoText: `~${coldRtoHours(DATA_COMPRESSED_GB / 1000)} hrs`, rpoText: '~1 min', failover: 'manual cross-region' },
+      { posture: 'warm', addedAnnual: NORTHWIND_EFF.warmDrAdd, totalAnnual: range((l) => adbTotal(NORTHWIND_EFF, 'warm', l)), rtoText: '< 10 min', rpoText: '0 (switchover) / ≤ 1 min (failover)', failover: 'manual cross-region' },
+      { posture: 'cold', addedAnnual: NORTHWIND_EFF.coldDrAdd, totalAnnual: range((l) => adbTotal(NORTHWIND_EFF, 'cold', l)), rtoText: `~${coldRtoHours(DATA_COMPRESSED_GB / 1000)} hrs`, rpoText: '~1 min', failover: 'manual cross-region' },
     ],
   },
   charts: {
@@ -192,20 +202,20 @@ export const NORTHWIND_DOCMODEL: DocModel = {
         {
           lines: ['Oracle ADB', '+ warm DR'],
           segments: [
-            { value: 81, color: PALETTE.green, name: 'ADB primary' },
-            { value: 133, color: PALETTE.greenLt, name: 'Autonomous Data Guard' },
+            { value: 79, color: PALETTE.green, name: 'ADB primary' },
+            { value: 143, color: PALETTE.greenLt, name: 'Autonomous Data Guard' },
           ],
-          total: 214,
+          total: 222,
           rtoRpo: 'RTO < 10m / RPO 0',
-          savePct: 52,
+          savePct: 51,
         },
         {
           lines: ['Oracle ADB', '+ cold DR'],
           segments: [
-            { value: 81, color: PALETTE.green, name: 'ADB primary' },
-            { value: 27, color: PALETTE.greenLt, name: 'backup-based DR' },
+            { value: 79, color: PALETTE.green, name: 'ADB primary' },
+            { value: 28, color: PALETTE.greenLt, name: 'backup-based DR' },
           ],
-          total: 108,
+          total: 107,
           rtoRpo: 'RTO ~11h',
           savePct: 76,
         },
@@ -220,7 +230,7 @@ export const NORTHWIND_DOCMODEL: DocModel = {
       statusQuo: statusQuoCum,
       migrateWarm: warmCum,
       migrateCold: coldCum,
-      paybackYear: paybackYear(NORTHWIND, 'warm') ?? 2,
+      paybackYear: paybackYear(NORTHWIND_EFF, 'warm') ?? 2,
       netSavingsLabel: net5WarmLabel,
     },
   },
@@ -229,7 +239,7 @@ export const NORTHWIND_DOCMODEL: DocModel = {
   prose: {
     businessCase: {
       execSummary:
-        'Northwind runs MongoDB on-prem at roughly $450K/yr fully loaded — license, people, hardware, and facility. The same workload on Oracle Autonomous Database lands near $214K/yr with warm cross-region DR (about 52% lower) or ~$108K with cold DR. The imminent MongoDB renewal is the funding bridge: renew once, prove out on ADB in parallel, and cut over via a low-risk blue/green migration.',
+        'Northwind runs MongoDB on-prem at roughly $450K/yr fully loaded — license, people, hardware, and facility. The same workload on Oracle Autonomous Database lands near $222K/yr with warm cross-region DR (about 51% lower) or ~$107K with cold DR. The imminent MongoDB renewal is the funding bridge: renew once, prove out on ADB in parallel, and cut over via a low-risk blue/green migration.',
       fullyLoadedComparison:
         'The comparison is fully loaded: MongoDB Enterprise Advanced, amortized servers and storage, data-center overhead, and loaded DBA labor on one side; the all-in ADB ECPU + storage subscription on the other. Software and people — not hardware — dominate the on-prem cost, and the ECPU model folds the database license into a single consumption line.',
       migrationPath:
