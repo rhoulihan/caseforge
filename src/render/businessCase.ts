@@ -19,8 +19,14 @@ export function renderBusinessCase(m: DocModel): RenderedDoc {
     : fmtUsd(t.adbWarmAnnual.central);
   const adbWarmSub = discounted ? `Oracle ADB + warm DR / yr<br>(${fmtPct(m.discountPct)} customer discount)` : 'Oracle ADB + warm DR / yr';
 
+  // Headline reflects the ENGINE-COMPUTED warm-DR saving (matches the stat card below) rather than a fixed
+  // "halve" assumption, so it stays honest as the sizing-derived cost moves. Non-positive saving (ADB not
+  // cheaper) falls back to a neutral title rather than overclaiming.
+  const savePct = t.savingWarm.pct;
+  const title = savePct > 0 ? `Cut ${m.companyName}'s Database TCO by ${fmtPct(savePct)}` : `${m.companyName}'s Database TCO Analysis`;
+
   const body = `
-${buildHeader({ companyName: m.companyName, preparedDate: m.preparedDate, documentStatus: m.documentStatus, title: `Halve ${m.companyName}'s Database TCO` })}
+${buildHeader({ companyName: m.companyName, preparedDate: m.preparedDate, documentStatus: m.documentStatus, title })}
 <p class="lead">${escapeProse(p.execSummary)}</p>
 <div class="stats">
   <div class="stat"><div class="n">${fmtUsd(t.onprem.total.central)}</div><div class="l">On-prem MongoDB<br>fully-loaded / yr</div></div>

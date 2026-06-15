@@ -39,9 +39,18 @@ describe('renderBusinessCase', () => {
     expect(renderBusinessCase(evil).html).not.toContain('<script>alert(1)</script>');
   });
 
-  it('renders the h1 with a correctly-encoded apostrophe (not double-escaped)', () => {
-    expect(out.html).toContain('Halve Northwind&#39;s Database TCO');
-    expect(out.html).not.toContain('&amp;#39;');
+  it('renders the h1 from the engine-computed saving (not a fixed "halve") with a correctly-encoded apostrophe', () => {
+    expect(out.html).toContain(`Cut Northwind&#39;s Database TCO by ${NORTHWIND_DOCMODEL.tco.savingWarm.pct}%`);
+    expect(out.html).not.toContain('Halve'); // no baked-in ~50% assumption
+    expect(out.html).not.toContain('&amp;#39;'); // apostrophe encoded once, not double-escaped
+  });
+
+  it('falls back to a neutral h1 when ADB is not cheaper (non-positive saving)', () => {
+    const m = structuredClone(NORTHWIND_DOCMODEL);
+    m.tco.savingWarm = { amount: -1000, pct: -1 };
+    const html = renderBusinessCase(m).html;
+    expect(html).toContain('Northwind&#39;s Database TCO Analysis');
+    expect(html).not.toContain('by -1%');
   });
 
   it('embeds a cost chart that respects the house-style invariants', () => {
