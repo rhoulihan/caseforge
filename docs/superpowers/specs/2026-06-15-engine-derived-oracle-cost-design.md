@@ -35,8 +35,9 @@ engine-computed. (User chose "Derive ADB primary + DR adds".)
 Let, from the same `consumedEcpu(inputs, 'workload')` the Sizing Brief uses (peak, avg):
 
 ```
-computeAnnual(n) = baseFor(peak, avg, n) × ecpuPerHr × hoursPerMonth × 12     // n = provisioning divisor
-storageAnnual    = dataCompressedGb × storagePerGbMo × 12
+computeAnnual(n)  = baseFor(peak, avg, n) × ecpuPerHr × hoursPerMonth × 12   // n = provisioning divisor
+dbStorageAnnual   = dataCompressedGb × storagePerGbMo × 12                    // ADB database storage rate ($0.1156)
+backupStoreAnnual = dataCompressedGb × backupStoragePerGbMo × 12              // object-storage rate (~$0.0255) — NEW
 ```
 
 Three provisioning postures form each `Range` (low/central/high) — all real, defensible strategies, with
@@ -49,32 +50,48 @@ Three provisioning postures form each `Range` (low/central/high) — all real, d
 | high | 1 | provision for peak, no autoscale reliance |
 
 ```
-adbPrimary[level] = computeAnnual(n[level]) + storageAnnual
-warmDrAdd[level]  = computeAnnual(n[level]) + warmStandbyStorageMult × storageAnnual   // ADG peer: base CPUs + 2× storage
-coldDrAdd[level]  = coldBackupStorageMult × storageAnnual                              // cross-region backup: 2× storage, NO compute
+adbPrimary[level] = computeAnnual(n[level]) + dbStorageAnnual
+warmDrAdd[level]  = computeAnnual(n[level]) + warmStandbyStorageMult × dbStorageAnnual  // ADG peer: base CPUs + 2× DB storage
+coldDrAdd         = coldBackupStorageMult × backupStoreAnnual                           // backup copies in OBJECT storage, NO compute
 ```
+
+`coldDrAdd` is storage-only → posture-invariant (low = central = high).
 
 **Grounding (Oracle docs):**
 - Autonomous Data Guard cross-region standby is billed *"the additional cost of the base CPUs and twice the
   storage of the Primary database … auto-scaled CPUs of the Primary are not billed additionally on the peer."*
-  → warm add = base compute + 2× storage. ([ADG cross-region billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/adg-about-cross-region--cross-tenancy.html))
-- Cross-region backup replication is billed *"for twice (2×) the … replicated backup storage size"*, no standby
-  compute. → cold add = 2× storage. ([ADB Serverless billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-features-billing.html))
-- Compute/storage rates are the **existing** Oracle list rates already in config (`ecpuPerHr 0.0807`,
-  `storagePerGbMo 0.1156`). **No new researched rate is introduced.**
+  → warm add = base compute + 2× **database** storage. ([ADG cross-region billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/adg-about-cross-region--cross-tenancy.html))
+- Cold (backup-based) DR keeps cross-region backup copies in **object storage**, billed at the OCI Object
+  Storage rate (~$0.0255/GB-mo), not the database rate — and there is **no running standby compute**. This is
+  why cold DR is far cheaper than warm. ([ADB Serverless billing](https://docs.oracle.com/en-us/iaas/autonomous-database-serverless/doc/autonomous-features-billing.html),
+  [OCI Object Storage pricing](https://www.oracle.com/cloud/storage/object-storage/pricing/))
+- Compute + database-storage rates are the **existing** config list rates (`ecpuPerHr 0.0807`,
+  `storagePerGbMo 0.1156`). One **new** rate is introduced: the object-storage backup rate (`backupStoragePerGbMo`).
 
-Resulting totals (via the unchanged `adbTotal`): warm = 2×compute + 3×storage; cold = compute + 3×storage.
-Every term is a function of the rep's sizing → adjusting vCPU/shards moves `computeAnnual`; adjusting storage
-(or the compression toggle) moves `storageAnnual` in all three lines.
+Resulting totals (via the unchanged `adbTotal`): warm = 2×compute + 3×dbStorage; cold = compute + dbStorage +
+2×backupStorage. Every term is a function of the rep's sizing → adjusting vCPU/shards moves `computeAnnual`;
+adjusting storage (or the compression toggle) moves both storage terms.
 
-**Northwind sanity (45.8 TB on-disk, base 22 ECPU central):** adbPrimary ≈ $79k, adbCold ≈ $206k,
-adbWarm ≈ $222k/yr (vs today's researched ≈ $214k fixture — same order, validates the model).
+**Northwind cross-check (45.8 TB on-disk, base 22 ECPU central) — validates against the hand-built `NORTHWIND` fixture:**
+
+| line | derived | fixture `NORTHWIND` | |
+|------|---------|------|---|
+| adbPrimary central | $79.1k | $80.9k | ✓ |
+| warmDrAdd central | $142.6k | $132.7k | ✓ |
+| coldDrAdd | $28.0k | $26.8k | ✓ |
+| **ADB+cold total** | **$107.1k** | $107.7k | ✓✓ |
+| **ADB+warm total** | **$221.7k** | $213.6k | ✓ |
+
+The hand-built fixture was constructed with essentially this same model — strong validation. (The new goldens
+will be these *derived* values, recomputed by the engine.)
 
 ## New config knobs (documented + sourced — not silent defaults)
 
 `ENGINE_CONFIG.adb` gains:
-- `warmStandbyStorageMult = 2` — ADG peer storage multiple. Source: Oracle ADG cross-region billing.
-- `coldBackupStorageMult = 2` — cross-region backup replication storage multiple. Source: ADB Serverless billing.
+- `backupStoragePerGbMo = 0.0255` — OCI Object Storage (Standard) list rate, USD/GB-mo, used for cold-DR backup
+  copies. Source: [OCI Object Storage pricing](https://www.oracle.com/cloud/storage/object-storage/pricing/).
+- `warmStandbyStorageMult = 2` — ADG peer database-storage multiple. Source: Oracle ADG cross-region billing.
+- `coldBackupStorageMult = 2` — cross-region backup-copy multiple. Source: ADB Serverless billing.
 - (warm standby compute multiple is fixed at 1 = base CPUs per the doc; expressed in the formula, not a knob.)
 
 ## Architecture / Files
