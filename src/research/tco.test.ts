@@ -18,6 +18,16 @@ const RATES = { inputPer1k: 0.005, outputPer1k: 0.025 };
 const NOW = Date.UTC(2026, 5, 5); // 2026-06-05
 const PROFILE: TcoProfile = { dbType: 'mongodb', shards: 3, hoVcpu: 16, drVcpu: 8, dataCompressedGb: 500, licenseModel: 'enterprise', drPosture: 'warm' };
 
+// What researchTcoCosts now returns for a NORTHWIND-sourced payload: the researched on-prem build-up +
+// migration, with the Oracle ranges as zero placeholders (engine-derived in assembleDocModel).
+const NORTHWIND_RESEARCHED = {
+  onpremComponents: NORTHWIND.onpremComponents,
+  adbPrimary: { low: 0, central: 0, high: 0 },
+  coldDrAdd: { low: 0, central: 0, high: 0 },
+  warmDrAdd: { low: 0, central: 0, high: 0 },
+  migrationPs: NORTHWIND.migrationPs,
+};
+
 class MockLLM implements LLM {
   calls: CompleteOptions[] = [];
   constructor(private readonly responses: Array<CompleteResult | Error>) {}
@@ -31,18 +41,18 @@ class MockLLM implements LLM {
 }
 
 function freshSources(): CostSourceRow[] {
+  // Oracle cost is engine-derived; sources cover only the researched on-prem + migration components.
   return [
     { component: 'license', source: 'Vendor price list', url: 'https://ex.com/a', asOfDate: '2026-05-01', sourceQuality: 'published' },
-    { component: 'adbPrimary', source: 'Oracle pricing', url: 'https://oracle.com/p', asOfDate: '2026-05-01', sourceQuality: 'published' },
+    { component: 'migrationPs', source: 'SI rate card', url: 'https://si.com/p', asOfDate: '2026-05-01', sourceQuality: 'published' },
   ];
 }
 
+// The reduced research payload: only the on-prem build-up + one-time migration (the Oracle ranges
+// adbPrimary/coldDrAdd/warmDrAdd are engine-derived in assembleDocModel and are NOT researched).
 function responseFrom(inputs = NORTHWIND, sources: CostSourceRow[] = freshSources(), usage = { inputTokens: 1800, outputTokens: 900 }): CompleteResult {
   const payload = {
     onpremComponents: inputs.onpremComponents,
-    adbPrimary: inputs.adbPrimary,
-    coldDrAdd: inputs.coldDrAdd,
-    warmDrAdd: inputs.warmDrAdd,
     migrationPs: inputs.migrationPs,
     sources,
   };
@@ -71,15 +81,26 @@ describe('normalizeAndValidate', () => {
     const { inputs } = normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, migrationPs: { low: 100, central: 100, high: 100 } }).text));
     expect(inputs.migrationPs).toEqual({ low: 80, central: 100, high: 120 });
   });
+  it('validates a payload without the (now engine-derived) Oracle ranges', () => {
+    const { inputs } = normalizeAndValidate(JSON.parse(responseFrom().text));
+    expect(inputs.migrationPs).toEqual(NORTHWIND.migrationPs);
+    expect(inputs.onpremComponents.license).toEqual(NORTHWIND.onpremComponents.license);
+    // Oracle ranges are zero placeholders (engine-derived in assembleDocModel; not researched).
+    expect(inputs.adbPrimary).toEqual({ low: 0, central: 0, high: 0 });
+    expect(inputs.coldDrAdd).toEqual({ low: 0, central: 0, high: 0 });
+    expect(inputs.warmDrAdd).toEqual({ low: 0, central: 0, high: 0 });
+  });
   it('rejects an inverted range', () => {
-    expect(() => normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, adbPrimary: { low: 200, central: 100, high: 50 } }).text))).toThrow(/monotonic/);
+    expect(() => normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, migrationPs: { low: 200, central: 100, high: 50 } }).text))).toThrow(/monotonic/);
   });
   it('rejects a tight-spread range whose central is outside [low, high] (no silent fix)', () => {
     // high>=low and a tight low/high spread, but central is way outside — must NOT expand+accept.
-    expect(() => normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, adbPrimary: { low: 99, central: 200, high: 100 } }).text))).toThrow(/monotonic/);
+    expect(() => normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, migrationPs: { low: 99, central: 200, high: 100 } }).text))).toThrow(/monotonic/);
   });
   it('rejects a negative number', () => {
-    expect(() => normalizeAndValidate(JSON.parse(responseFrom({ ...NORTHWIND, coldDrAdd: { low: -1, central: 10, high: 20 } }).text))).toThrow(TcoResearchValidationError);
+    const bad = JSON.parse(responseFrom().text);
+    bad.onpremComponents.storage = { low: -1, central: 10, high: 20 };
+    expect(() => normalizeAndValidate(bad)).toThrow(TcoResearchValidationError);
   });
   it('rejects a missing component', () => {
     const bad = JSON.parse(responseFrom().text);
@@ -102,7 +123,7 @@ describe('researchTcoCosts', () => {
   it('parses + validates a fresh web-search response (published -> 0.75)', async () => {
     const llm = new MockLLM([responseFrom()]);
     const r = await researchTcoCosts(llm, 'm', PROFILE, { now: NOW });
-    expect(r.inputs).toEqual(NORTHWIND);
+    expect(r.inputs).toEqual(NORTHWIND_RESEARCHED);
     expect(r.confidence).toBe(0.75);
     expect(r.usage).toEqual({ inputTokens: 1800, outputTokens: 900 });
     expect(llm.calls[0]!.webSearch).toBe(true);
@@ -201,11 +222,11 @@ describe('researchTcoCosts', () => {
 });
 
 describe('sourcesToClaims', () => {
-  it('emits one claim per component and is NEVER high confidence', async () => {
+  it('emits one claim per researched component (on-prem + migration) and is NEVER high confidence', async () => {
     const result = await researchTcoCosts(new MockLLM([responseFrom()]), 'm', PROFILE, { now: NOW });
     const claims = sourcesToClaims(result);
-    expect(claims).toHaveLength(10);
-    expect(new Set(claims.map((c) => c.id)).size).toBe(10);
+    expect(claims).toHaveLength(7); // 6 on-prem + migrationPs (Oracle ranges are engine-derived, not claimed)
+    expect(new Set(claims.map((c) => c.id)).size).toBe(7);
     expect(claims.every((c) => c.section === 'D')).toBe(true);
     expect(claims.every((c) => c.declaredSource?.confidence !== 'high')).toBe(true);
     const license = claims.find((c) => c.id === 'research:license')!;
@@ -215,6 +236,14 @@ describe('sourcesToClaims', () => {
     const mig = claims.find((c) => c.id === 'research:migrationPs')!;
     expect(mig.unit).toBe('USD');
     expect(mig.value).toBe(NORTHWIND.migrationPs.central);
+  });
+
+  it('omits the engine-derived Oracle components (no adbPrimary/coldDrAdd/warmDrAdd claims)', async () => {
+    const result = await researchTcoCosts(new MockLLM([responseFrom()]), 'm', PROFILE, { now: NOW });
+    const ids = sourcesToClaims(result).map((c) => c.id);
+    expect(ids).not.toContain('research:adbPrimary');
+    expect(ids).not.toContain('research:coldDrAdd');
+    expect(ids).not.toContain('research:warmDrAdd');
   });
 
   it('maps low confidence to the low tier and returns a fresh array each call', () => {

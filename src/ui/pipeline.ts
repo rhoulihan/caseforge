@@ -30,9 +30,10 @@ export const DEFAULT_TCO_INPUTS: TcoInputs = {
     labor: { low: 30_000, central: 70_000, high: 140_000 },
     backup: { low: 5_000, central: 10_000, high: 20_000 },
   },
-  adbPrimary: { low: 70_000, central: 90_000, high: 120_000 },
-  coldDrAdd: { low: 15_000, central: 25_000, high: 40_000 },
-  warmDrAdd: { low: 110_000, central: 130_000, high: 150_000 },
+  // Oracle cost is engine-derived in assembleDocModel; inert placeholders.
+  adbPrimary: { low: 0, central: 0, high: 0 },
+  coldDrAdd: { low: 0, central: 0, high: 0 },
+  warmDrAdd: { low: 0, central: 0, high: 0 },
   migrationPs: { low: 75_000, central: 150_000, high: 300_000 },
 };
 
